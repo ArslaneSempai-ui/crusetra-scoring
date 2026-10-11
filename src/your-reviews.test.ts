@@ -34,21 +34,27 @@ const ENTETE_C = ("customer_id,kind,residence_country,activity_code,products,pep
   + "onboarding_channel,relationship_start,declared_turnover,observed_turnover,"
   + "cash_ratio,cross_border_ratio,nationality_country,ownership_layers,beneficial_owner_named");
 
-function ligneClient(id: string, cash: string, nat = "FR"): string {
-  return `${id},individual,FR,salaried,card;wire,none,branch,2020-01-01,50000,48000,${cash},0.1,${nat},,`;
+/** Where a customer lives and what they do; the default is a code no table of the tests holds. */
+type Profil = { residence: string; activite: string; nat: string };
+
+function ligneClient(id: string, cash: string, nat = "FR", residence = "FR", activite = "salaried"): string {
+  return `${id},individual,${residence},${activite},card;wire,none,branch,2020-01-01,50000,48000,${cash},0.1,${nat},,`;
 }
 
-/** n revues : e escaladées (cashRatio donnés), le reste maintenu à 0,40. */
-function jeu(cashEscalades: number[], nMaintenues: number): { revues: string; clients: string } {
+/** n revues : e escaladées (cashRatio donnés), le reste maintenu à 0,40. `profil` gives
+ *  the customers of each outcome their codes, by default FR and salaried for everyone. */
+function jeu(cashEscalades: number[], nMaintenues: number,
+  profil?: (escalade: boolean) => Profil): { revues: string; clients: string } {
   const r: string[] = [ENTETE_R];
   const c: string[] = [ENTETE_C];
+  const p = (escalade: boolean): Profil => profil?.(escalade) ?? { residence: "FR", activite: "salaried", nat: "FR" };
   cashEscalades.forEach((s, i) => {
     r.push(`e-${i},cli-e${i},2026-08-30,escalated`);
-    c.push(ligneClient(`cli-e${i}`, String(s)));
+    c.push(ligneClient(`cli-e${i}`, String(s), p(true).nat, p(true).residence, p(true).activite));
   });
   for (let i = 0; i < nMaintenues; i++) {
     r.push(`m-${i},cli-m${i},2026-0${(i % 3) + 6}-15,maintained`);
-    c.push(ligneClient(`cli-m${i}`, "0.4"));
+    c.push(ligneClient(`cli-m${i}`, "0.4", p(false).nat, p(false).residence, p(false).activite));
   }
   return { revues: r.join("\n") + "\n", clients: c.join("\n") + "\n" };
 }
@@ -259,7 +265,13 @@ function lancerAvecTables(tables: unknown): { texte: string; releve: Record<stri
   const d = mkdtempSync(join(tmpdir(), "amethyste-tables-"));
   const maison = join(d, "maison");
   mkdirSync(maison);
-  const { revues, clients } = jeu([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], 24);
+  /* The customers HOLD the codes of the client's tables (escalated ones live in NZ, the others
+     in CL, all in the sentinel activity, none with a nationality), so that the activity and
+     geography factors read the client's weights: a weight that reaches the record through a
+     score is only visible if some customer carries the code the weight sits on. */
+  const { revues, clients } = jeu([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], 24, (escalade) => ({
+    residence: escalade ? "NZ" : "CL", activite: "xylophone-sentinelle", nat: "",
+  }));
   writeFileSync(join(d, "revues.csv"), revues);
   writeFileSync(join(d, "clients.csv"), clients);
   writeFileSync(join(d, "tables.json"), JSON.stringify(tables));
@@ -274,15 +286,32 @@ function lancerAvecTables(tables: unknown): { texte: string; releve: Record<stri
 }
 
 test("--tables : the record holds no table weight and no country code, the client's or the declared ones", () => {
-  const { texte } = lancerAvecTables(TABLES_CLIENT);
+  const { texte, releve } = lancerAvecTables(TABLES_CLIENT);
   /* Weights and codes of the client's tables, then names and codes of the declared tables
-     that this run did not replace (they are in the record today, as the merge of both). */
+     that this run did not replace (the whole of both tables once travelled in the record). */
   const fuites = ["0.6173", "0.4829", "0.3917", '"NZ"', '"CL"', '"xylophone-sentinelle"',
     '"adverseMedia"', '"poidsBeneficiaireInconnu"', '"joursDormance"', '"correspondent"'];
   for (const f of fuites) {
     assert.ok(!texte.includes(f),
-      `${f} comes out in revues-measured.json: the record seals the tables' VALUES, and a client's risk `
-      + "policy leaves the machine in a file made to be shared. Seal each table's name and sha256 instead.");
+      `${f} comes out in revues-measured.json: a value of a risk table reaches the record, written whole or `
+      + "as a score that equals it, and a client's risk policy leaves the machine in a file made to be shared. "
+      + "Seal each table's name and sha256 instead, and write no per-review score.");
+  }
+  /* A weight can also come out as a number, written by float arithmetic or as a score (the
+     activity score of a customer IS the weight of their code): every number of the whole
+     record is compared, the verdicts included, with a tolerance that a rounding does not beat. */
+  const nombres: number[] = [];
+  const parcourir = (x: unknown): void => {
+    if (typeof x === "number") nombres.push(x);
+    else if (Array.isArray(x)) x.forEach(parcourir);
+    else if (x && typeof x === "object") Object.values(x).forEach(parcourir);
+  };
+  parcourir(releve);
+  assert.ok(nombres.length > 100, "the walk must have read the record's numbers, verdicts included");
+  for (const poids of [0.6173, 0.4829, 0.3917]) {
+    assert.ok(!nombres.some((n) => Math.abs(n - poids) < 1e-9),
+      `the number ${poids} is in the record: a table weight, written as a score or a rate. `
+      + "A client's risk table leaves the machine through it.");
   }
 });
 
