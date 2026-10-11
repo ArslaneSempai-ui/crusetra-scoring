@@ -1,5 +1,5 @@
 /**
- * LE RAPPORT — les sections du contrat (§6), dans son ordre : ce qui a été mesuré, les
+ * LE RAPPORT : les sections du contrat (§6), dans son ordre : ce qui a été mesuré, les
  * cellules que le relevé garde par facteur (la sienne sous l'exigence, et le seuil suivant ;
  * la grille entière ne sort pas), la cellule recommandée sous l'exigence déclarée (« none
  * holds the floor » dit tel quel), le pas suivant en revues, la robustesse synthétique à part,
