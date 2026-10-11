@@ -55,10 +55,17 @@ export type PalierId = (typeof PALIERS)[number];
 export const SEUILS: readonly number[] = Array.from({ length: 51 }, (_, i) => Math.round((0.5 + i * 0.01) * 100) / 100);
 
 /**
- * The bound that a CLIENT record keeps: no weight of the client's risk tables may be read back from the sealed record or from the
- * report better than this, in score. The grid of thresholds is a histogram of each factor's scores (a group of customers that
- * share a code steps recall from 100 % to 0 between the two thresholds that bracket its weight), so the step of the grid IS the
- * bound, and the grid of a client record follows it (`SEUILS_CLIENT`; grille-client.test.ts reads it).
+ * The step of the grid of a CLIENT record, and what it bounds: ONE SCORE. The grid of thresholds is a histogram of each factor's
+ * scores (a group of customers that share a score steps recall from 100 % to 0 between the two thresholds that bracket it), so a
+ * weight that a score reads directly shows in that score's grid no better than within this step; the grid of a client record
+ * follows it (`SEUILS_CLIENT`; grille-client.test.ts reads it).
+ *
+ * It is NOT a bound per weight. A weight that enters several scores can be narrowed by combining them: geography is `combiner`
+ * (noisy-OR) of the weight of the residence and the weight of the nationality, so a group whose nationality is unknown brackets w
+ * and a group whose nationality is its residence brackets 1 - (1 - w)^2, and the intersection of the two brackets is narrower than
+ * the step (grille-client.test.ts computes it and pins the claims to it). The products of a customer, and the signals of the
+ * exposure, structure, behaviour and tenure factors, combine the same way. A mechanism that bounds a weight itself, and not a
+ * score, is not decided.
  *
  * WHY 0.05, the coarsest step that still serves the review. What the grid serves is the recommended cell: the strictest threshold
  * that holds the recall floor, with the fewest false alerts. On the public record (42 + 42 written dossiers, 126 + 126 generated),

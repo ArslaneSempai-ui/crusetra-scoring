@@ -1,17 +1,18 @@
 /**
- * A CLIENT'S TABLE WEIGHT CANNOT BE READ BACK FROM THE SEALED RECORD, OR FROM THE REPORT, BETTER THAN THE GRID'S STEP.
+ * A CLIENT'S TABLE WEIGHT SHOWS IN EACH SCORE NO BETTER THAN THE GRID'S STEP, in the sealed record and in the report.
  *
  * The record writes no weight, but its grid of thresholds is a histogram of each factor's scores. The `activity` factor scores a
  * customer with the weight of their activity code, as it stands in the client's own table, so a group of customers that share a
  * code steps `tirees` down between the two thresholds that bracket that weight. On a grid of 0.01 the weight is known to a
- * hundredth; the bound `PAS_CLIENT` says how coarse the grid of a CLIENT record must be so that no weight is known better than
- * that. The test reads the bound from the code, plants weights across the range, runs the real registry through `executer`, reads
+ * hundredth; the step `PAS_CLIENT` says how coarse the grid of a CLIENT record must be so that a score shows no better than that.
+ * The first test reads the step from the code, plants weights across the range, runs the real registry through `executer`, reads
  * back the JSON and the Markdown that would leave the client's machine, and works out from them alone, for every planted weight,
  * between which two thresholds it sits. It also checks that nothing printed (the thresholds shown, the recommended threshold, the
- * next step) is finer than the grid.
+ * next step) is finer than the grid. The second test pins that the step is a bound per SCORE and not per weight: a weight that
+ * enters several scores narrows when they are combined, and the claims must say so.
  *
  * The detector is proven on a fabricated record first, on a grid of 0.01, so that a green here means "looked, found no bracket
- * tighter than the bound" and not "could not look".
+ * tighter than the step" and not "could not look".
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -115,7 +116,7 @@ test("a client's table weight is bracketed no tighter than the grid's step, in t
   assert.equal(trouves.filter((e) => e.bas !== undefined).length, GROUPES.length, "each weight still shows as a step of the grid");
   for (const e of trouves) assert.ok(e.bas! <= e.poids && e.poids < e.haut!, `${e.code}: the bracket contains the weight`);
   assert.deepEqual(fuites(emis), [],
-    `a table weight of the client reads back tighter than ${PAS_CLIENT} from the sealed record: "never a weight" just became finer than its bound`);
+    `a score of the client reads back tighter than ${PAS_CLIENT} from the sealed record: the grid is finer than the step the code declares`);
 
   /* the report: the thresholds it shows and the ones it recommends are on the grid, never between two of its steps */
   const md = readFileSync(cheminMd, "utf8");

@@ -62,7 +62,8 @@ export function rendreRapport(m: MesureRevues): string {
   l.push(`## The frontier, factor by factor`, ``);
   l.push(`Thresholds shown: ${SEUILS_MONTRES.map((s) => s.toFixed(2)).join(", ")}; the same grid`);
   l.push(`lives in the sealed record beside this file. It is ${PAS_CLIENT.toFixed(2)} apart on purpose: the steps of a`);
-  l.push(`factor's recall show its scores, and so a weight of your risk tables, no better than that.`);
+  l.push(`factor's recall show each of its scores no better than within that step. A weight that enters`);
+  l.push(`several scores can be narrowed by combining them.`);
   l.push(``);
   const paliers = Object.entries(m.paliers).sort(([, a], [, b]) => a!.rang - b!.rang);
   for (const [id, p] of paliers) {
@@ -147,7 +148,8 @@ export function rendreRapport(m: MesureRevues): string {
   l.push(`  they stay on your machine: the record seals their sha256 and none of their values.`);
   l.push(`  The sha256 is unsalted: it proves which table was used, it does not hide it, and a`);
   l.push(`  short table could be recovered by guessing its values. The grid of thresholds is`);
-  l.push(`  ${PAS_CLIENT.toFixed(2)} apart, so a weight of your tables shows in this file no better than within that step.`);
+  l.push(`  ${PAS_CLIENT.toFixed(2)} apart, so a score shows in this file no better than within that step; a weight`);
+  l.push(`  that enters several scores can be narrowed by combining them.`);
   l.push(`- seal: ${m.empreinte ?? "(sealed after rendering; see the .json beside this file)"} · `
     + `measured ${m.measuredAt.slice(0, 10)}`
     + (m.code ? ` · code at commit ${m.code.commit}` : ""));

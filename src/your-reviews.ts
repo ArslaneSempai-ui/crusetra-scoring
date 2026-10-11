@@ -20,8 +20,9 @@
  * The risk tables of `--tables` are your risk policy, so the record carries each table as
  * a name and a sha256 only (see `sealTables`): a changed table shows, no weight and no
  * country code leaves. And its grid of thresholds is `SEUILS_CLIENT`, PAS_CLIENT apart: the
- * grid is a histogram of each factor's scores, so a weight shows in it no better than that
- * step (grille-client.test.ts plants weights and reads them back).
+ * grid is a histogram of each factor's scores, so a score shows in it no better than that
+ * step, and a weight that enters several scores can be narrowed by combining them
+ * (grille-client.test.ts plants weights and reads them back, alone and combined).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -514,8 +515,9 @@ onboarding_channel, relationship_start, turnovers, ratios, and the entity fields
                The record seals each table's name and sha256, never a weight or a code.
                The sha256 is unsalted: it proves which table was used, it does not hide it,
                and a short table could be recovered by guessing its values. The thresholds
-               are ${PAS_CLIENT.toFixed(2)} apart, so a weight shows in the record and the report no better
-               than within that step.
+               are ${PAS_CLIENT.toFixed(2)} apart, so each score shows in the record and the report no better
+               than within that step; a weight that enters several scores can be
+               narrowed by combining them.
 
 It writes, next to your reviews file and nowhere else:
   <file>-measured.md     the report (no customer, no country, no amount of yours)
