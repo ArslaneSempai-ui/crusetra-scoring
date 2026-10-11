@@ -79,6 +79,9 @@ export const CAS = {
     groupes: [{ ...base, residence: "NZ", nationalite: "", taille: 40, outcome: "escalated" },
       { ...base, residence: "NZ", nationalite: "NZ", taille: 40, outcome: "escalated" }, { ...base, taille: 40, outcome: "maintained" }] as Groupe[],
     tablesDe: (w: number) => ({ paysRisque: { NZ: w } }) },
+  partage: { nom: "a weight that two tables carry, known to be the same",
+    groupes: [{ ...base, residence: "NZ", nationalite: "NZ", activite: "code-x", taille: 80, outcome: "escalated" }, { ...base, taille: 40, outcome: "maintained" }] as Groupe[],
+    tablesDe: (w: number) => ({ paysRisque: { NZ: w }, activiteRisque: { "code-x": w } }) },
   produit: { nom: "a product, alone and combined with a cheap one",
     groupes: [{ ...base, produits: "cash", taille: 40, outcome: "escalated" }, { ...base, produits: "cash;wire", taille: 40, outcome: "escalated" },
       { ...base, taille: 40, outcome: "maintained" }] as Groupe[],
@@ -100,7 +103,7 @@ export function inverseDeuxFois(score: number): number {
 
 
 /** The three exact cases in which a weight reads tighter than the step, and the one that the version 1 grid had. Each is measured, not assumed. */
-export function faits(): { proche: boolean; double: boolean; enregistrements: boolean; croisement: boolean } {
+export function faits(): { proche: boolean; double: boolean; enregistrements: boolean; partages: boolean; croisement: boolean } {
   const etroit = (l: number): boolean => l < PAS_CLIENT - TOLERANCE;
   /* a kept threshold between two scores of one factor closer than the step: a product alone and with a cheap one, near 0.9 */
   const proche = POIDS.slice(0, 4).some((w0) => etroit(largeur(course(enregistrement(), CAS.produit.groupes, CAS.produit.tablesDe, w0))));
@@ -113,7 +116,9 @@ export function faits(): { proche: boolean; double: boolean; enregistrements: bo
   const [b1, h1] = course(enregistrement(0.9), deux, CAS.pays.tablesDe, 0.6173);
   const [b2, h2] = course(enregistrement(0.6), deux, CAS.pays.tablesDe, 0.6173);
   const enregistrements = etroit(largeur([Math.max(b1, b2), Math.min(h1, h2)]));
+  /* two tables that carry the same weight, for an observer who knows it: one escalated group reads both (geography twice, activity once) */
+  const partages = etroit(largeur(course(enregistrement(), CAS.partage.groupes, CAS.partage.tablesDe, 0.6173)));
   /* crossing two brackets of the same weight inside ONE record, which the full grid of version 1 allowed */
   const croisement = [CAS.activite, CAS.pays].some((cas) => POIDS.some((w0) => etroit(largeur(course(enregistrement(), cas.groupes, cas.tablesDe, w0)))));
-  return { proche, double, enregistrements, croisement };
+  return { proche, double, enregistrements, partages, croisement };
 }

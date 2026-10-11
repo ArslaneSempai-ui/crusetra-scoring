@@ -73,7 +73,7 @@ const aplati = (t: string): string => t.replace(/[\s*]+/g, " ").toLowerCase();
 test("every claim names the cases in which a weight reads tighter than the step, exactly when they exist, and says that another floor means running measure:yours again", () => {
   const f = faits();     /* measured by the oracle of record-croise.test.ts: the writer is the witness */
   assert.equal(f.croisement, false, "no weight narrows by crossing two brackets inside one record any more");
-  const cas: [keyof typeof f, string][] = [["proche", "closer than the step"], ["double", "enters one score twice"], ["enregistrements", "records of the same data"]];
+  const cas: [keyof typeof f, string][] = [["proche", "closer than the step"], ["double", "enters one score twice"], ["enregistrements", "records of the same data"], ["partages", "carry the same weight"]];
 
   const racine = fileURLToPath(new URL("..", import.meta.url));
   const maison = mkdtempSync(join(tmpdir(), "grille-maison-"));

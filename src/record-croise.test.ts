@@ -82,3 +82,12 @@ test("two records of the same data measured at different recall floors can be co
   assert.ok(seul >= PAS_CLIENT - TOLERANCE, `each record alone brackets the weight in ${seul.toFixed(3)}, at least the step`);
   assert.ok(ensemble < PAS_CLIENT - TOLERANCE, `the two together bracket it in ${ensemble.toFixed(3)}, under the step`);
 });
+
+test("two tables that carry the same weight narrow it for an observer who knows they are the same", () => {
+  /* one escalated group reads the country twice (residence is nationality) and the activity code once: the record keeps the cell of
+     geography, whose bracket in weight is the step in score through 1 - (1 - w)^2, and the cell of activity, whose bracket is the
+     step itself. The record cannot say the two weights are equal; an observer who knows it intersects the two brackets. */
+  const l = largeur(course(enregistrement(), CAS.partage.groupes, CAS.partage.tablesDe, 0.6173));
+  assert.ok(l < PAS_CLIENT - TOLERANCE, `the two brackets of the same weight intersect in ${l.toFixed(3)}, under the step`);
+  assert.ok(largeur(course(enregistrement(), CAS.partage.groupes, CAS.partage.tablesDe, 0.5127)) >= PAS_CLIENT - TOLERANCE, "not for every weight");
+});
