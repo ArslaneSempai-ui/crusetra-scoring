@@ -2,7 +2,7 @@
  * LE RAPPORT — les sections du contrat (§6), dans son ordre : ce qui a été mesuré, la
  * grille facteur × seuil, la cellule recommandée sous l'exigence déclarée (« none holds
  * the floor » dit tel quel), le pas suivant en revues, la robustesse synthétique à part,
- * la provenance avec les TABLES photographiées. JAMAIS une valeur du client : ni
+ * la provenance avec le nom et le sha256 des TABLES (jamais leurs valeurs). JAMAIS une valeur du client : ni
  * customer_id, ni pays, ni code d'activité, ni montant.
  */
 import { table } from "./figures.ts";
@@ -139,18 +139,21 @@ export function rendreRapport(m: MesureRevues): string {
   l.push(`- assumed: ${(Object.keys(STATUSES) as (keyof typeof STATUSES)[])
     .map((k) => ligneDHypothese(k)).join("; ")}.`);
   l.push(`- the risk TABLES are the loudest assumption of this tool (short, declared, never`);
-  l.push(`  an official list) and the sealed record snapshots the exact tables this run was`);
-  l.push(`  measured under (${(Object.keys(TABLES_STATUS) as string[]).join(", ")}: all assumed);`);
-  l.push(`  replace them with yours: \`--tables=<json>\`, and note that the record then seals`);
-  l.push(`  YOUR tables (they decide every score): a record measured under your tables carries`);
-  l.push(`  them, so share it as you would share your risk policy.`);
+  l.push(`  an official list) and the sealed record carries the name and the sha256 of each`);
+  l.push(`  table this run was measured under (${(Object.keys(TABLES_STATUS) as string[]).join(", ")}:`);
+  l.push(`  all assumed), never a weight or a code, so a changed table shows as a changed sha256;`);
+  l.push(`  replace them with yours: \`--tables=<json>\`. Your tables decide every score, and`);
+  l.push(`  they stay on your machine: the record seals their sha256 and none of their values.`);
+  l.push(`  The sha256 is unsalted: it proves which table was used, it does not hide it, and a`);
+  l.push(`  short table could be recovered by guessing its values.`);
   l.push(`- seal: ${m.empreinte ?? "(sealed after rendering; see the .json beside this file)"} · `
     + `measured ${m.measuredAt.slice(0, 10)}`
     + (m.code ? ` · code at commit ${m.code.commit}` : ""));
   l.push(``);
   l.push(`No value from your files (no customer_id, no country, no activity code, no amount)`);
   l.push(`appears in this report or in the sealed record; verdicts are keyed by your review_id`);
-  l.push(`and carry scores only. The review ids and the file names are yours and DO survive:`);
+  l.push(`and carry the committee's outcome and whether the nationality was known, never a`);
+  l.push(`score. The review ids and the file names are yours and DO survive:`);
   l.push(`choose them opaque.`);
   l.push(``);
   return l.join("\n");

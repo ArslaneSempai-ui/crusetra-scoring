@@ -45,12 +45,12 @@ the network cut, and a test reads every source so that no module ever grows a ne
 
 ## What is measured, assumed, synthetic
 
-Every rate in a report carries its `n` and its 95 % Wilson interval. The scales that turn
-an amount or a count into a score, the cash reporting threshold, analyst minutes per alert
-and analyst cost are **assumed** and declared in `src/assumptions.ts`. The public record is
-**written and generated**: cases we authored and seeded variants, measured apart, never
-merged into anything measured on your data. Below five confirmed suspicious cases, no
-recall is quoted, and the report states why.
+Every rate in a report carries its `n` and its 95 % Wilson interval. The risk tables, the
+scales that turn an amount or a count into a score, analyst minutes per review, analyst
+cost and the recall floor are **assumed** and declared in `src/assumptions.ts`. The public
+record is **written and generated**: dossiers we authored and seeded variants, measured
+apart, never merged into anything measured on your data. Below five confirmed escalations,
+no recall is quoted, and the report states why.
 
 ## Seals and signatures
 
@@ -59,7 +59,7 @@ reports are verified against the same public key, [`cle-publique.pem`](cle-publi
 with `npm run verify`.
 
 <!-- figures:tests -->
-**113 tests** across 16 files, counted by running the suite rather than typed here.
+**127 tests** across 19 files, counted by running the suite rather than typed here.
 <!-- /figures:tests -->
 
 ## Licence

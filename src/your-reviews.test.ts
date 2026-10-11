@@ -5,11 +5,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
-  lireRevues, lireClients, reconstruire, mesurer, executer, lireVolume,
+  lireRevues, lireClients, reconstruire, mesurer, executer, lireVolume, sealTables,
   MINIMUM_REVUES, type Revue,
 } from "./your-reviews.ts";
 import { rendreRapport, TROP_PEU_D_ESCALADES, NOTE_PETIT_N } from "./rapport.ts";
@@ -32,21 +34,27 @@ const ENTETE_C = ("customer_id,kind,residence_country,activity_code,products,pep
   + "onboarding_channel,relationship_start,declared_turnover,observed_turnover,"
   + "cash_ratio,cross_border_ratio,nationality_country,ownership_layers,beneficial_owner_named");
 
-function ligneClient(id: string, cash: string, nat = "FR"): string {
-  return `${id},individual,FR,salaried,card;wire,none,branch,2020-01-01,50000,48000,${cash},0.1,${nat},,`;
+/** Where a customer lives and what they do; the default is a code no table of the tests holds. */
+type Profil = { residence: string; activite: string; nat: string };
+
+function ligneClient(id: string, cash: string, nat = "FR", residence = "FR", activite = "salaried"): string {
+  return `${id},individual,${residence},${activite},card;wire,none,branch,2020-01-01,50000,48000,${cash},0.1,${nat},,`;
 }
 
-/** n revues : e escaladées (cashRatio donnés), le reste maintenu à 0,40. */
-function jeu(cashEscalades: number[], nMaintenues: number): { revues: string; clients: string } {
+/** n revues : e escaladées (cashRatio donnés), le reste maintenu à 0,40. `profil` gives
+ *  the customers of each outcome their codes, by default FR and salaried for everyone. */
+function jeu(cashEscalades: number[], nMaintenues: number,
+  profil?: (escalade: boolean) => Profil): { revues: string; clients: string } {
   const r: string[] = [ENTETE_R];
   const c: string[] = [ENTETE_C];
+  const p = (escalade: boolean): Profil => profil?.(escalade) ?? { residence: "FR", activite: "salaried", nat: "FR" };
   cashEscalades.forEach((s, i) => {
     r.push(`e-${i},cli-e${i},2026-08-30,escalated`);
-    c.push(ligneClient(`cli-e${i}`, String(s)));
+    c.push(ligneClient(`cli-e${i}`, String(s), p(true).nat, p(true).residence, p(true).activite));
   });
   for (let i = 0; i < nMaintenues; i++) {
     r.push(`m-${i},cli-m${i},2026-0${(i % 3) + 6}-15,maintained`);
-    c.push(ligneClient(`cli-m${i}`, "0.4"));
+    c.push(ligneClient(`cli-m${i}`, "0.4", p(false).nat, p(false).residence, p(false).activite));
   }
   return { revues: r.join("\n") + "\n", clients: c.join("\n") + "\n" };
 }
@@ -128,8 +136,12 @@ test("l'ancienneté se compte au jour de la revue, et « sans nationalité » vo
   }, null);
   assert.equal(m.source.sansNationalite, 1);
   assert.equal(m.verdicts["e-0"]!.sansNationalite, true);
-  assert.equal(m.verdicts["e-0"]!.scores.geography, 0, "le geography factice rend 0 sans nationalité");
-  assert.ok(m.verdicts["e-0"]!.scores.behaviour! > 0.8, "un facteur non géographique note quand même");
+  /* The verdict keeps no score, so the factor's reading shows in the cells: at 0.85 the fake
+     geography draws the 5 escalated reviews that have a nationality, not e-0 (it scores 0
+     without one), and behaviour, which does not read the nationality, draws all 6. */
+  const tireesA85 = (id: PalierId) => m.paliers[id]!.cellules.find((c) => c.seuil === 0.85)!.rappel.successes;
+  assert.equal(tireesA85("geography"), 5, "le geography factice rend 0 sans nationalité");
+  assert.equal(tireesA85("behaviour"), 6, "un facteur non géographique note quand même");
 });
 
 /* ─── la grille ─── */
@@ -181,9 +193,8 @@ test("les zones du rappel : 4 escalades pas citées, 6 citées avec la note, 25 
 /* ─── never a value, avec témoin ─── */
 
 test("le relevé et le rapport ne portent AUCUNE valeur du client, et le détecteur sait voir", () => {
-  /* « NZ » et non « KY » : KY vit dans la TABLE DÉCLARÉE, photographiée dans le relevé
-     par construction : le témoin l'a trouvé et il avait raison de chercher : la sentinelle
-     du client doit être un pays hors table, sinon le test accuse la photographie. */
+  /* "NZ" and not "KY": the sentinel stays a country that no declared table holds, so the
+     test never depends on how the tables travel in the record (today by name and sha256). */
   const SENTINELLES = ["CLI-SENTINELLE-9", "NZ", "casino-sentinelle", "987654.32"];
   const d = mkdtempSync(join(tmpdir(), "amethyste-"));
   const cheminR = join(d, "revues.csv");
@@ -207,17 +218,137 @@ test("le relevé et le rapport ne portent AUCUNE valeur du client, et le détect
   }
   assert.ok(JSON.stringify({ fuite: SENTINELLES[0] }).includes(SENTINELLES[0]!));
   assert.equal(mesure.verdicts["rv-0"]!.outcome, "escalated");
-  assert.ok(typeof mesure.verdicts["rv-0"]!.scores.behaviour === "number");
+  assert.deepEqual(Object.keys(mesure.verdicts["rv-0"]!).sort(), ["outcome", "sansNationalite"],
+    "a verdict holds the outcome and the unknown nationality, never a score");
 });
 
-/* ─── le scellé et les tables photographiées ─── */
+/* ─── le scellé et l'empreinte des tables ─── */
 
-test("le relevé est scellable, une retouche le fait mentir, et il photographie ses tables", () => {
+test("le relevé est scellable, une retouche le fait mentir, et il scelle le nom et le sha256 de ses tables", () => {
   const m = mesureDe([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], 24);
   m.empreinte = empreinteDuReleve(m);
   assert.ok(scelleIntact(m as unknown as Record<string, unknown>));
   const copie = JSON.parse(JSON.stringify(m)) as typeof m;
   copie.source.escalated = 25;
   assert.ok(!scelleIntact(copie as unknown as Record<string, unknown>));
-  assert.deepEqual(m.tables, TABLES, "les changer change les scores : elles voyagent scellées");
+  /* The record seals one { name, sha256 } per declared table, never a weight or a code. */
+  assert.deepEqual(m.tables.map((t) => t.name), Object.keys(TABLES).sort(),
+    "une entrée par table déclarée, par son nom");
+  assert.ok(m.tables.every((t) => /^[0-9a-f]{64}$/.test(t.sha256)), "chaque table porte un sha256 de 64 hex");
+  assert.deepEqual(m.tables, sealTables(TABLES), "le sha256 est celui du contenu de la table");
+  assert.ok(!JSON.stringify(m.tables).includes("KY"), "aucun code pays de la table déclarée ne sort");
+});
+
+test("sealTables : le sha256 suit le contenu de la table, pas l'ordre de ses clés", () => {
+  const A = sealTables(tablesAvec('{"paysRisque": {"NZ": 0.6, "CL": 0.4}}'));
+  const memeContenuAutreOrdre = sealTables(tablesAvec('{"paysRisque": {"CL": 0.4, "NZ": 0.6}}'));
+  const unPoidsChange = sealTables(tablesAvec('{"paysRisque": {"NZ": 0.6, "CL": 0.5}}'));
+  assert.deepEqual(A, memeContenuAutreOrdre, "l'ordre des clés écrit par le client ne change pas le sha256");
+  const sha = (l: ReturnType<typeof sealTables>, nom: string) => l.find((t) => t.name === nom)!.sha256;
+  assert.notEqual(sha(A, "paysRisque"), sha(unPoidsChange, "paysRisque"), "un poids change : le sha256 bouge");
+  assert.equal(sha(A, "produitRisque"), sha(unPoidsChange, "produitRisque"), "une table intacte garde son sha256");
+});
+
+/* ─── --tables : the record seals each table's fingerprint, never its values ─── */
+
+/* S1 (a), first option, decided: a client's risk tables are their risk policy, and the
+   sealed record leaves the client's machine. It carries the name and the sha256 of each
+   table, so that a changed table is visible, and never a weight or a country code. */
+
+const RACINE = fileURLToPath(new URL("..", import.meta.url));
+
+/** The client's tables: country codes and activity codes outside the declared tables, and
+ *  weights no other number of the record can equal by chance. */
+const TABLES_CLIENT = {
+  paysRisque: { NZ: 0.6173, CL: 0.4829 },
+  activiteRisque: { "xylophone-sentinelle": 0.3917 },
+};
+
+/** One real run of `node src/your-reviews.ts --tables=...`, in a fabricated home (the
+ *  evaluation clock writes there, never in the real one). Returns the parsed record and its text. */
+function lancerAvecTables(tables: unknown): { texte: string; releve: Record<string, unknown> } {
+  const d = mkdtempSync(join(tmpdir(), "amethyste-tables-"));
+  const maison = join(d, "maison");
+  mkdirSync(maison);
+  /* The customers HOLD the codes of the client's tables (escalated ones live in NZ, the others
+     in CL, all in the sentinel activity, none with a nationality), so that the activity and
+     geography factors read the client's weights: a weight that reaches the record through a
+     score is only visible if some customer carries the code the weight sits on. */
+  const { revues, clients } = jeu([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], 24, (escalade) => ({
+    residence: escalade ? "NZ" : "CL", activite: "xylophone-sentinelle", nat: "",
+  }));
+  writeFileSync(join(d, "revues.csv"), revues);
+  writeFileSync(join(d, "clients.csv"), clients);
+  writeFileSync(join(d, "tables.json"), JSON.stringify(tables));
+  const r = spawnSync(process.execPath, [
+    join(RACINE, "src", "your-reviews.ts"),
+    `--reviews=${join(d, "revues.csv")}`, `--customers=${join(d, "clients.csv")}`,
+    `--tables=${join(d, "tables.json")}`,
+  ], { cwd: RACINE, encoding: "utf8", timeout: 120_000, env: { ...process.env, HOME: maison, USERPROFILE: maison } });
+  assert.equal(r.status, 0, `the run with --tables must succeed to be read:\n${r.stdout}${r.stderr}`);
+  const texte = readFileSync(join(d, "revues-measured.json"), "utf8");
+  return { texte, releve: JSON.parse(texte) as Record<string, unknown> };
+}
+
+test("--tables : the record holds no table weight and no country code, the client's or the declared ones", () => {
+  const { texte, releve } = lancerAvecTables(TABLES_CLIENT);
+  /* Weights and codes of the client's tables, then names and codes of the declared tables
+     that this run did not replace (the whole of both tables once travelled in the record). */
+  const fuites = ["0.6173", "0.4829", "0.3917", '"NZ"', '"CL"', '"xylophone-sentinelle"',
+    '"adverseMedia"', '"poidsBeneficiaireInconnu"', '"joursDormance"', '"correspondent"'];
+  for (const f of fuites) {
+    assert.ok(!texte.includes(f),
+      `${f} comes out in revues-measured.json: a value of a risk table reaches the record, written whole or `
+      + "as a score that equals it, and a client's risk policy leaves the machine in a file made to be shared. "
+      + "Seal each table's name and sha256 instead, and write no per-review score.");
+  }
+  /* A weight can also come out as a number, written by float arithmetic or as a score (the
+     activity score of a customer IS the weight of their code): every number of the whole
+     record is compared, the verdicts included, with a tolerance that a rounding does not beat. */
+  const nombres: number[] = [];
+  const parcourir = (x: unknown): void => {
+    if (typeof x === "number") nombres.push(x);
+    else if (Array.isArray(x)) x.forEach(parcourir);
+    else if (x && typeof x === "object") Object.values(x).forEach(parcourir);
+  };
+  parcourir(releve);
+  assert.ok(nombres.length > 100, "the walk must have read the record's numbers, verdicts included");
+  for (const poids of [0.6173, 0.4829, 0.3917]) {
+    assert.ok(!nombres.some((n) => Math.abs(n - poids) < 1e-9),
+      `the number ${poids} is in the record: a table weight, written as a score or a rate. `
+      + "A client's risk table leaves the machine through it.");
+  }
+});
+
+test("--tables : the record carries each table's name and sha256, and the sha256 follows the table's content", () => {
+  const A = lancerAvecTables(TABLES_CLIENT).releve;
+  const B = lancerAvecTables({ ...TABLES_CLIENT, paysRisque: { NZ: 0.6174, CL: 0.4829 } }).releve;
+  const sha = (releve: Record<string, unknown>, nom: string): string => {
+    const t = releve.tables as unknown;
+    /* Two shapes name a table and its fingerprint: a list of { name, sha256 } or an object
+       keyed by name holding { sha256 }. Anything else, or a table without a sha256, is red. */
+    const entree = Array.isArray(t)
+      ? (t as { name?: string; sha256?: string }[]).find((e) => e.name === nom)
+      : (t as Record<string, { sha256?: string }> | undefined)?.[nom];
+    const valeur = entree?.sha256;
+    assert.ok(typeof valeur === "string" && /^[0-9a-f]{64}$/.test(valeur),
+      `the record has no sha256 for the table "${nom}": tables should read like `
+      + `[{ "name": "${nom}", "sha256": "<64 hex>" }], found ${JSON.stringify(t)?.slice(0, 120)}`);
+    return valeur;
+  };
+  assert.notEqual(sha(A, "paysRisque"), sha(B, "paysRisque"),
+    "one weight changed in paysRisque and its sha256 did not move: the seal does not follow the table.");
+  assert.equal(sha(A, "activiteRisque"), sha(B, "activiteRisque"),
+    "activiteRisque did not change and its sha256 moved: the seal is not the table's own.");
+});
+
+test("--tables : the usage line and the report both say the sha256 is unsalted, so a seal is not read as a hiding", () => {
+  const maison = mkdtempSync(join(tmpdir(), "amethyste-usage-"));
+  const r = spawnSync(process.execPath, [join(RACINE, "src", "your-reviews.ts")],
+    { cwd: RACINE, encoding: "utf8", timeout: 120_000, env: { ...process.env, HOME: maison, USERPROFILE: maison } });
+  assert.equal(r.status, 0, `the usage must print, not fail:\n${r.stdout}${r.stderr}`);
+  const dit = (texte: string) => /sha256 is unsalted:\s+it proves which table was used,\s+it does not hide\s+it/.test(texte);
+  assert.ok(dit(r.stdout), "the usage line of --tables must say the sha256 is unsalted: it proves the table, it does not hide it");
+  assert.ok(dit(rendreRapport(mesureDe([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], 24))),
+    "the report's provenance paragraph must say the sha256 is unsalted: it proves the table, it does not hide it");
 });

@@ -10,7 +10,9 @@
  * short DECLARED lists, never a copied official list. A country list here is not a claim
  * about any country: it is a knob whose default is arguable by construction, shipped so
  * the measurement machinery can run, and replaced by the client's own table with
- * `--tables=<json>`. The sealed record snapshots the tables it was measured under.
+ * `--tables=<json>`. The sealed record of a client's run carries the name and sha256 of
+ * the tables it was measured under, never their values; the public record, which runs the
+ * declared tables only, carries them whole.
  */
 import type { Tables } from "./facteur.ts";
 
