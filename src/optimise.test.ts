@@ -12,7 +12,7 @@ import {
   plusForteBorne, heuresDAnalyste, cellulesDe, MINIMUM_ESCALADES, type CellulePlacee,
 } from "./optimise.ts";
 import { rate } from "./interval.ts";
-import { SEUILS } from "./facteur.ts";
+import { SEUILS_CLIENT } from "./facteur.ts";
 import { empreinteDuReleve } from "./empreinte.ts";
 import { ASSUMPTIONS, analystHourlyCost } from "./assumptions.ts";
 import { mesurer, lireRevues, lireClients } from "./your-reviews.ts";
@@ -77,7 +77,7 @@ test("un relevé retouché est refusé AVANT la frontière, les deux empreintes 
   const sain = join(d, "x-measured.json");
   writeFileSync(sain, JSON.stringify(m));
   assert.equal(lireReleve(sain).source.reviews, 30);
-  assert.equal(cellulesDe(lireReleve(sain)).length, 2 * SEUILS.length,
+  assert.equal(cellulesDe(lireReleve(sain)).length, 2 * SEUILS_CLIENT.length,
     "deux facteurs factices, la grille entière chacun : le compte est TENU par la constante");
 
   const retouche = JSON.parse(JSON.stringify(m)) as typeof m;

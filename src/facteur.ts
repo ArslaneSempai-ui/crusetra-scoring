@@ -4,7 +4,7 @@
  * Sept facteurs, du plus bête (le pays contre une liste déclarée) au plus cher (l'écart du
  * comportement au profil déclaré), chacun dans son fichier sous `src/facteurs/` (lot L1),
  * enregistrés par `src/facteurs/index.ts` (`registre()`). La mesure (L4) et la mesure client
- * (L3) balaient chaque facteur sur les 51 seuils de SEUILS et lisent rappel et fausses
+ * (L3) balaient chaque facteur sur les seuils de SEUILS (publique) ou de SEUILS_CLIENT (client) et lisent rappel et fausses
  * alertes par cellule. Un facteur ne lit JAMAIS une constante à lui : les listes, poids et
  * échelles arrivent par `Tables` (src/assumptions.ts, lot L3), remplaçables par celles du
  * client. A client's run seals each table's name and sha256, never its values.
@@ -49,15 +49,29 @@ export interface Facteur {
 export const PALIERS = ["geography", "activity", "product", "exposure", "structure", "behaviour", "tenure"] as const;
 export type PalierId = (typeof PALIERS)[number];
 
-/** 0,50 → 1,00 par pas de 0,01 : 51 seuils, arrondis au centième, les mêmes que les trois autres outils */
+/** 0,50 → 1,00 par pas de 0,01 : 51 seuils, arrondis au centième, les mêmes que les trois autres outils. C'est la grille de la
+ *  MESURE PUBLIQUE (measure.ts), scellée et signée : elle publie ses tables déclarées en entier, aucun poids de client n'y vit.
+ *  Un relevé CLIENT, lui, suit `SEUILS_CLIENT` ci-dessous. */
 export const SEUILS: readonly number[] = Array.from({ length: 51 }, (_, i) => Math.round((0.5 + i * 0.01) * 100) / 100);
 
 /**
  * The bound that a CLIENT record keeps: no weight of the client's risk tables may be read back from the sealed record or from the
- * report better than this, in score. The grid of thresholds is a histogram of each factor's scores, so its step is that bound.
- * Declared here before the client grid follows it (grille-client.test.ts reads it and is red until then).
+ * report better than this, in score. The grid of thresholds is a histogram of each factor's scores (a group of customers that
+ * share a code steps recall from 100 % to 0 between the two thresholds that bracket its weight), so the step of the grid IS the
+ * bound, and the grid of a client record follows it (`SEUILS_CLIENT`; grille-client.test.ts reads it).
+ *
+ * WHY 0.05, the coarsest step that still serves the review. What the grid serves is the recommended cell: the strictest threshold
+ * that holds the recall floor, with the fewest false alerts. On the public record (42 + 42 written dossiers, 126 + 126 generated),
+ * for recall floors from 0.5 to 0.8, a step of 0.05 keeps the recommended factor and its false alerts and raises at most one review
+ * more than the grid of 0.01 does (76 against 75, generated half, floor 0.5). A step of 0.10 raises up to eleven more (86 against
+ * 75), and a step of 0.25 adds ten false alerts (authored half, floors 0.6 to 0.8). What a client loses with 0.05: the recommended
+ * threshold sits on one of eleven values, up to one step under the finest optimum, and the cells between are not written.
  */
 export const PAS_CLIENT = 0.05;
+
+/** 0,50 → 1,00 par pas de PAS_CLIENT : la grille d'un relevé CLIENT (`measure:yours`), onze seuils. */
+export const SEUILS_CLIENT: readonly number[] = Array.from({ length: Math.round(0.5 / PAS_CLIENT) + 1 },
+  (_, i) => Math.round((0.5 + i * PAS_CLIENT) * 1e6) / 1e6);
 
 /** Un score hors [0, 1] est une erreur nommée, jamais un arrondi silencieux. */
 export function exigerScore(s: number, id: string, d: Dossier): Score {

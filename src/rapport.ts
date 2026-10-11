@@ -8,7 +8,7 @@
 import { table } from "./figures.ts";
 import { rate, cellulesDeTaux, ENOUGH } from "./interval.ts";
 import { cellule } from "./csv.ts";
-import { SEUILS } from "./facteur.ts";
+import { SEUILS_CLIENT, PAS_CLIENT } from "./facteur.ts";
 import { ASSUMPTIONS, STATUSES, UNITS, TABLES_STATUS, symboleDe, ligneDHypothese } from "./assumptions.ts";
 import { cellulesDe, meilleureSousRappel, heuresDAnalyste, MINIMUM_ESCALADES } from "./optimise.ts";
 import type { MesureRevues, Cellule } from "./your-reviews.ts";
@@ -17,7 +17,7 @@ export { MINIMUM_ESCALADES };
 export const TROP_PEU_D_ESCALADES = "too few confirmed cases to bound recall";
 export const NOTE_PETIT_N = "n below 20: read the interval, not the point";
 
-export const SEUILS_MONTRES: readonly number[] = [0.50, 0.60, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.99, 1.00];
+export const SEUILS_MONTRES: readonly number[] = SEUILS_CLIENT;
 
 /** La cellule du rappel suit le CONTRAT : sous cinq escalades, la phrase ; dès cinq, le
  *  taux AVEC son intervalle même sous ENOUGH, et la note sous chaque table concernée. */
@@ -60,8 +60,9 @@ export function rendreRapport(m: MesureRevues): string {
   l.push(``);
 
   l.push(`## The frontier, factor by factor`, ``);
-  l.push(`Thresholds shown: ${SEUILS_MONTRES.map((s) => s.toFixed(2)).join(", ")}; the full grid of`);
-  l.push(`${SEUILS.length} lives in the sealed record beside this file.`);
+  l.push(`Thresholds shown: ${SEUILS_MONTRES.map((s) => s.toFixed(2)).join(", ")}; the same grid`);
+  l.push(`lives in the sealed record beside this file. It is ${PAS_CLIENT.toFixed(2)} apart on purpose: the steps of a`);
+  l.push(`factor's recall show its scores, and so a weight of your risk tables, no better than that.`);
   l.push(``);
   const paliers = Object.entries(m.paliers).sort(([, a], [, b]) => a!.rang - b!.rang);
   for (const [id, p] of paliers) {
@@ -115,7 +116,7 @@ export function rendreRapport(m: MesureRevues): string {
       l.push(`period, ${h.heures.toFixed(1)} analyst hour(s), ${symboleDe(UNITS.analystAnnualCost)}${h.usd.toFixed(0)}, computed from assumptions shown here:`);
       l.push(`- ${ligneDHypothese("minutesPerReview")}`);
       l.push(`- ${ligneDHypothese("analystAnnualCost")}, over ${ASSUMPTIONS.workingDaysPerYear} days/year × ${ASSUMPTIONS.productiveHoursPerDay} h/day`);
-      const suivant = m.paliers[c.palier]!.cellules.find((x) => x.seuil === Math.round((c.seuil + 0.01) * 100) / 100);
+      const suivant = m.paliers[c.palier]!.cellules.find((x) => x.seuil > c.seuil);     /* the next step of the grid, never a finer one */
       if (suivant) {
         const dr = celluleRappel(suivant, m.source.escalated);
         l.push(``);
@@ -145,7 +146,8 @@ export function rendreRapport(m: MesureRevues): string {
   l.push(`  replace them with yours: \`--tables=<json>\`. Your tables decide every score, and`);
   l.push(`  they stay on your machine: the record seals their sha256 and none of their values.`);
   l.push(`  The sha256 is unsalted: it proves which table was used, it does not hide it, and a`);
-  l.push(`  short table could be recovered by guessing its values.`);
+  l.push(`  short table could be recovered by guessing its values. The grid of thresholds is`);
+  l.push(`  ${PAS_CLIENT.toFixed(2)} apart, so a weight of your tables shows in this file no better than within that step.`);
   l.push(`- seal: ${m.empreinte ?? "(sealed after rendering; see the .json beside this file)"} · `
     + `measured ${m.measuredAt.slice(0, 10)}`
     + (m.code ? ` · code at commit ${m.code.commit}` : ""));

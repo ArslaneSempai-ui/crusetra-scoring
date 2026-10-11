@@ -19,7 +19,9 @@
  *
  * The risk tables of `--tables` are your risk policy, so the record carries each table as
  * a name and a sha256 only (see `sealTables`): a changed table shows, no weight and no
- * country code leaves.
+ * country code leaves. And its grid of thresholds is `SEUILS_CLIENT`, PAS_CLIENT apart: the
+ * grid is a histogram of each factor's scores, so a weight shows in it no better than that
+ * step (grille-client.test.ts plants weights and reads them back).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -28,7 +30,7 @@ import { execFileSync } from "node:child_process";
 import { isMain, refuserDrapeauxInconnus } from "./cli.ts";
 import { lireTable, apercu, MONTRES } from "./csv.ts";
 import { rate, type Rate } from "./interval.ts";
-import { SEUILS, PALIERS, type PalierId, type Registre, type Tables } from "./facteur.ts";
+import { SEUILS_CLIENT, PAS_CLIENT, PALIERS, type PalierId, type Registre, type Tables } from "./facteur.ts";
 import { KINDS, PEPS, PRODUITS, CANAUX, exigerDossier,
          type Dossier, type Kind, type Pep, type Produit, type Canal } from "./dossier.ts";
 import { TABLES, tablesAvec } from "./assumptions.ts";
@@ -406,7 +408,7 @@ export function mesurer(
        none is written per review in the record. */
     const scores = new Map<string, number>(
       revues.map((r) => [r.id, f.score(dossiers.get(r.id)!, tables)]));
-    const cellules: Cellule[] = SEUILS.map((seuil) => {
+    const cellules: Cellule[] = SEUILS_CLIENT.map((seuil) => {
       const tire = (r: Revue) => scores.get(r.id)! >= seuil;
       const tirees = revues.filter(tire).length;
       return {
@@ -511,7 +513,9 @@ onboarding_channel, relationship_start, turnovers, ratios, and the entity fields
                demonstration tables, which are short, assumed, and never an official list.
                The record seals each table's name and sha256, never a weight or a code.
                The sha256 is unsalted: it proves which table was used, it does not hide it,
-               and a short table could be recovered by guessing its values.
+               and a short table could be recovered by guessing its values. The thresholds
+               are ${PAS_CLIENT.toFixed(2)} apart, so a weight shows in the record and the report no better
+               than within that step.
 
 It writes, next to your reviews file and nowhere else:
   <file>-measured.md     the report (no customer, no country, no amount of yours)
@@ -540,7 +544,7 @@ Nothing about your files leaves this machine.
 
   console.log(`\n${mesure.source.reviews} review(s): ${mesure.source.escalated} escalated, `
     + `${mesure.source.maintained} maintained, ${mesure.source.sansNationalite} without nationality; `
-    + `${Object.keys(mesure.paliers).length} factor(s), ${SEUILS.length} thresholds each.`);
+    + `${Object.keys(mesure.paliers).length} factor(s), ${SEUILS_CLIENT.length} thresholds each.`);
   if (mesure.absents.length) {
     console.log(`  ${mesure.absents.length} contract factor(s) not in the registry: `
       + `${mesure.absents.join(", ")}; said in the report, not guessed.`);
