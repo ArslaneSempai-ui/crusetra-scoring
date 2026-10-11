@@ -20,8 +20,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { DIT_LES_CAS } from "./facteur.ts";
 import {
-  PAS_CLIENT, combiner, TOLERANCE, POIDS, POIDS_CHEAP, CAS, base, course, largeur, enregistrement, grilleEntiere,
+  PAS_CLIENT, combiner, TOLERANCE, POIDS, POIDS_CHEAP, CAS, base, course, largeur, enregistrement, grilleEntiere, AUTRES_DONNEES,
   encadrerGrille, inverseDeuxFois, type Groupe,
 } from "./oracle-poids.ts";
 
@@ -90,4 +91,19 @@ test("two tables that carry the same weight narrow it for an observer who knows 
   const l = largeur(course(enregistrement(), CAS.partage.groupes, CAS.partage.tablesDe, 0.6173));
   assert.ok(l < PAS_CLIENT - TOLERANCE, `the two brackets of the same weight intersect in ${l.toFixed(3)}, under the step`);
   assert.ok(largeur(course(enregistrement(), CAS.partage.groupes, CAS.partage.tablesDe, 0.5127)) >= PAS_CLIENT - TOLERANCE, "not for every weight");
+});
+
+test("two records of DIFFERENT data under the same tables and the same floor can be combined, and the wording says it", () => {
+  /* dataset 1: customers whose residence is NZ with an unknown nationality and others who have it too, all escalated; dataset 2: only
+     customers who have it too. Same tables, same floor 0.90. The first record brackets the weight by the step through the country
+     alone, the second through 1 - (1 - w)^2: two brackets of the same weight, from two datasets, the tables' sha256 linking them. */
+  const w0 = 0.6173;
+  const [b1, h1] = course(enregistrement(), CAS.pays.groupes, CAS.pays.tablesDe, w0);
+  const [b2, h2] = course(enregistrement(), AUTRES_DONNEES, CAS.pays.tablesDe, w0);
+  assert.ok(Math.min(largeur([b1, h1]), largeur([b2, h2])) >= PAS_CLIENT - TOLERANCE, "each record alone brackets the weight by at least the step");
+  const ensemble = largeur([Math.max(b1, b2), Math.min(h1, h2)]);
+  assert.ok(ensemble < PAS_CLIENT - TOLERANCE, `the two together bracket it in ${ensemble.toFixed(3)}, under the step`);
+  const dit = DIT_LES_CAS.replace(/\s+/g, " ").toLowerCase();
+  assert.ok(dit.includes("several records measured under the same tables") && dit.includes("links them") && dit.includes("or of other data"),
+    "the wording of the cases must say that records of other data under the same tables, which the sha256 of the tables links, can be combined");
 });

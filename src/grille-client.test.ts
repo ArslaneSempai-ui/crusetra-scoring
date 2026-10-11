@@ -73,7 +73,7 @@ const aplati = (t: string): string => t.replace(/[\s*]+/g, " ").toLowerCase();
 test("every claim names the cases in which a weight reads tighter than the step, exactly when they exist, and says that another floor means running measure:yours again", () => {
   const f = faits();     /* measured by the oracle of record-croise.test.ts: the writer is the witness */
   assert.equal(f.croisement, false, "no weight narrows by crossing two brackets inside one record any more");
-  const cas: [keyof typeof f, string][] = [["proche", "closer than the step"], ["double", "enters one score twice"], ["enregistrements", "records of the same data"], ["partages", "carry the same weight"]];
+  const cas: [keyof typeof f, string][] = [["proche", "closer than the step"], ["double", "enters one score twice"], ["enregistrements", "of the same data at other floors"], ["autresDonnees", "or of other data"], ["partages", "carry the same weight"]];
 
   const racine = fileURLToPath(new URL("..", import.meta.url));
   const maison = mkdtempSync(join(tmpdir(), "grille-maison-"));
@@ -116,4 +116,13 @@ test("the README does not offer a review budget that the record can no longer an
   assert.ok(ligneOptimise.includes("review-budget") ? ligneOptimise.includes("refuses") && ligneOptimise.includes("whole frontier") : true,
     "the README line of optimise offers --review-budget as if it worked: it refuses it, because it needs the whole frontier, which the record no longer keeps");
   assert.ok(ligneOptimise.includes("another floor"), "the README line of optimise says that another recall floor is refused");
+});
+
+test("the header of optimise.ts says what optimise does now, not a review budget it refuses", () => {
+  const racine = fileURLToPath(new URL("..", import.meta.url));
+  const source = readFileSync(join(racine, "src/optimise.ts"), "utf8");
+  const entete = aplati(source.slice(0, source.indexOf("*/")));
+  assert.ok(!entete.includes("review-budget=800"), "the header offers --review-budget=800 as if it answered");
+  assert.ok(entete.includes("--review-budget") ? entete.includes("refuse") : true, "the header names --review-budget without saying that it is refused");
+  assert.ok(entete.includes("another floor") || entete.includes("autre exigence") || entete.includes("une autre"), "the header says that another recall floor is refused");
 });
