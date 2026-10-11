@@ -150,7 +150,8 @@ export function rendreRapport(m: MesureRevues): string {
   l.push(``);
   l.push(`No value from your files (no customer_id, no country, no activity code, no amount)`);
   l.push(`appears in this report or in the sealed record; verdicts are keyed by your review_id`);
-  l.push(`and carry scores only. The review ids and the file names are yours and DO survive:`);
+  l.push(`and carry the committee's outcome and whether the nationality was known, never a`);
+  l.push(`score. The review ids and the file names are yours and DO survive:`);
   l.push(`choose them opaque.`);
   l.push(``);
   return l.join("\n");

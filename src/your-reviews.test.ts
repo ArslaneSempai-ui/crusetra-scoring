@@ -136,8 +136,12 @@ test("l'ancienneté se compte au jour de la revue, et « sans nationalité » vo
   }, null);
   assert.equal(m.source.sansNationalite, 1);
   assert.equal(m.verdicts["e-0"]!.sansNationalite, true);
-  assert.equal(m.verdicts["e-0"]!.scores.geography, 0, "le geography factice rend 0 sans nationalité");
-  assert.ok(m.verdicts["e-0"]!.scores.behaviour! > 0.8, "un facteur non géographique note quand même");
+  /* The verdict keeps no score, so the factor's reading shows in the cells: at 0.85 the fake
+     geography draws the 5 escalated reviews that have a nationality, not e-0 (it scores 0
+     without one), and behaviour, which does not read the nationality, draws all 6. */
+  const tireesA85 = (id: PalierId) => m.paliers[id]!.cellules.find((c) => c.seuil === 0.85)!.rappel.successes;
+  assert.equal(tireesA85("geography"), 5, "le geography factice rend 0 sans nationalité");
+  assert.equal(tireesA85("behaviour"), 6, "un facteur non géographique note quand même");
 });
 
 /* ─── la grille ─── */
@@ -214,7 +218,8 @@ test("le relevé et le rapport ne portent AUCUNE valeur du client, et le détect
   }
   assert.ok(JSON.stringify({ fuite: SENTINELLES[0] }).includes(SENTINELLES[0]!));
   assert.equal(mesure.verdicts["rv-0"]!.outcome, "escalated");
-  assert.ok(typeof mesure.verdicts["rv-0"]!.scores.behaviour === "number");
+  assert.deepEqual(Object.keys(mesure.verdicts["rv-0"]!).sort(), ["outcome", "sansNationalite"],
+    "a verdict holds the outcome and the unknown nationality, never a score");
 });
 
 /* ─── le scellé et l'empreinte des tables ─── */

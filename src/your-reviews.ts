@@ -323,7 +323,9 @@ export type MesureRevues = {
   tables: TableSeal[];
   paliers: Partial<Record<PalierId, MesurePalier>>;
   absents: PalierId[];
-  verdicts: Record<string, { outcome: Outcome; sansNationalite: boolean; scores: Partial<Record<PalierId, number>> }>;
+  /** By review_id: the committee's outcome and whether the nationality was unknown, never
+   *  a score (a score can equal a weight of the client's risk tables). */
+  verdicts: Record<string, { outcome: Outcome; sansNationalite: boolean }>;
   code: { commit: string } | null;
   empreinte?: string;
 };
@@ -393,15 +395,16 @@ export function mesurer(
   const verdicts: MesureRevues["verdicts"] = Object.fromEntries(revues.map((r) => [r.id, {
     outcome: r.outcome,
     sansNationalite: dossiers.get(r.id)!.nationality === undefined,
-    scores: {} as Partial<Record<PalierId, number>>,
   }]));
 
   for (const f of [...registre.values()].sort((x, y) => x.rang - y.rang)) {
     /* Le score d'un dossier se calcule UNE fois et voyage BRUT : un arrondi avant la
-       comparaison ferait tirer au seuil 1,00 un score de 0,99996 (payé chez le rouge). */
+       comparaison ferait tirer au seuil 1,00 un score de 0,99996 (payé chez le rouge).
+       The scores stay here and feed the cells only: a score can equal a weight of the
+       client's tables (the activity score of a customer IS the weight of their code), so
+       none is written per review in the record. */
     const scores = new Map<string, number>(
       revues.map((r) => [r.id, f.score(dossiers.get(r.id)!, tables)]));
-    for (const r of revues) verdicts[r.id]!.scores[f.id] = scores.get(r.id)!;
     const cellules: Cellule[] = SEUILS.map((seuil) => {
       const tire = (r: Revue) => scores.get(r.id)! >= seuil;
       const tirees = revues.filter(tire).length;
