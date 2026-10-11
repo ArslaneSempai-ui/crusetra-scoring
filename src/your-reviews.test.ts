@@ -5,9 +5,11 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   lireRevues, lireClients, reconstruire, mesurer, executer, lireVolume,
   MINIMUM_REVUES, type Revue,
@@ -220,4 +222,74 @@ test("le relevé est scellable, une retouche le fait mentir, et il photographie 
   copie.source.escalated = 25;
   assert.ok(!scelleIntact(copie as unknown as Record<string, unknown>));
   assert.deepEqual(m.tables, TABLES, "les changer change les scores : elles voyagent scellées");
+});
+
+/* ─── --tables : the record seals each table's fingerprint, never its values ─── */
+
+/* S1 (a), first option, decided: a client's risk tables are their risk policy, and the
+   sealed record leaves the client's machine. It carries the name and the sha256 of each
+   table, so that a changed table is visible, and never a weight or a country code. */
+
+const RACINE = fileURLToPath(new URL("..", import.meta.url));
+
+/** The client's tables: country codes and activity codes outside the declared tables, and
+ *  weights no other number of the record can equal by chance. */
+const TABLES_CLIENT = {
+  paysRisque: { NZ: 0.6173, CL: 0.4829 },
+  activiteRisque: { "xylophone-sentinelle": 0.3917 },
+};
+
+/** One real run of `node src/your-reviews.ts --tables=...`, in a fabricated home (the
+ *  evaluation clock writes there, never in the real one). Returns the parsed record and its text. */
+function lancerAvecTables(tables: unknown): { texte: string; releve: Record<string, unknown> } {
+  const d = mkdtempSync(join(tmpdir(), "amethyste-tables-"));
+  const maison = join(d, "maison");
+  mkdirSync(maison);
+  const { revues, clients } = jeu([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], 24);
+  writeFileSync(join(d, "revues.csv"), revues);
+  writeFileSync(join(d, "clients.csv"), clients);
+  writeFileSync(join(d, "tables.json"), JSON.stringify(tables));
+  const r = spawnSync(process.execPath, [
+    join(RACINE, "src", "your-reviews.ts"),
+    `--reviews=${join(d, "revues.csv")}`, `--customers=${join(d, "clients.csv")}`,
+    `--tables=${join(d, "tables.json")}`,
+  ], { cwd: RACINE, encoding: "utf8", timeout: 120_000, env: { ...process.env, HOME: maison, USERPROFILE: maison } });
+  assert.equal(r.status, 0, `the run with --tables must succeed to be read:\n${r.stdout}${r.stderr}`);
+  const texte = readFileSync(join(d, "revues-measured.json"), "utf8");
+  return { texte, releve: JSON.parse(texte) as Record<string, unknown> };
+}
+
+test("--tables : the record holds no table weight and no country code, the client's or the declared ones", () => {
+  const { texte } = lancerAvecTables(TABLES_CLIENT);
+  /* Weights and codes of the client's tables, then names and codes of the declared tables
+     that this run did not replace (they are in the record today, as the merge of both). */
+  const fuites = ["0.6173", "0.4829", "0.3917", '"NZ"', '"CL"', '"xylophone-sentinelle"',
+    '"adverseMedia"', '"poidsBeneficiaireInconnu"', '"joursDormance"', '"correspondent"'];
+  for (const f of fuites) {
+    assert.ok(!texte.includes(f),
+      `${f} comes out in revues-measured.json: the record seals the tables' VALUES, and a client's risk `
+      + "policy leaves the machine in a file made to be shared. Seal each table's name and sha256 instead.");
+  }
+});
+
+test("--tables : the record carries each table's name and sha256, and the sha256 follows the table's content", () => {
+  const A = lancerAvecTables(TABLES_CLIENT).releve;
+  const B = lancerAvecTables({ ...TABLES_CLIENT, paysRisque: { NZ: 0.6174, CL: 0.4829 } }).releve;
+  const sha = (releve: Record<string, unknown>, nom: string): string => {
+    const t = releve.tables as unknown;
+    /* Two shapes name a table and its fingerprint: a list of { name, sha256 } or an object
+       keyed by name holding { sha256 }. Anything else, or a table without a sha256, is red. */
+    const entree = Array.isArray(t)
+      ? (t as { name?: string; sha256?: string }[]).find((e) => e.name === nom)
+      : (t as Record<string, { sha256?: string }> | undefined)?.[nom];
+    const valeur = entree?.sha256;
+    assert.ok(typeof valeur === "string" && /^[0-9a-f]{64}$/.test(valeur),
+      `the record has no sha256 for the table "${nom}": tables should read like `
+      + `[{ "name": "${nom}", "sha256": "<64 hex>" }], found ${JSON.stringify(t)?.slice(0, 120)}`);
+    return valeur;
+  };
+  assert.notEqual(sha(A, "paysRisque"), sha(B, "paysRisque"),
+    "one weight changed in paysRisque and its sha256 did not move: the seal does not follow the table.");
+  assert.equal(sha(A, "activiteRisque"), sha(B, "activiteRisque"),
+    "activiteRisque did not change and its sha256 moved: the seal is not the table's own.");
 });
