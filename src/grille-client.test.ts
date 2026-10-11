@@ -107,3 +107,13 @@ test("every claim names the cases in which a weight reads tighter than the step,
     assert.ok(lu.includes("measure:yours again"), `${lieu} must say that another recall floor means running measure:yours again`);
   }
 });
+
+test("the README does not offer a review budget that the record can no longer answer", () => {
+  const racine = fileURLToPath(new URL("..", import.meta.url));
+  const lu = aplati(readFileSync(join(racine, "README.md"), "utf8"));
+  const ligneOptimise = lu.slice(lu.indexOf("npm run optimise"), lu.indexOf("npm run sceller"));
+  assert.ok(ligneOptimise.length > 0, "the README names optimise");
+  assert.ok(ligneOptimise.includes("review-budget") ? ligneOptimise.includes("refuses") && ligneOptimise.includes("whole frontier") : true,
+    "the README line of optimise offers --review-budget as if it worked: it refuses it, because it needs the whole frontier, which the record no longer keeps");
+  assert.ok(ligneOptimise.includes("another floor"), "the README line of optimise says that another recall floor is refused");
+});
