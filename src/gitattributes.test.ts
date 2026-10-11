@@ -1,3 +1,8 @@
+/* PARTAGÉ DANS LA FAMILLE CASCADE — source : cascade-monitoring
+   Cascade Monitoring and Cascade Scoring carry this file byte for byte. Fix it in the
+   source, then copy it over by hand: family files do not travel by themselves.
+   `couche-famille.test.ts` compares the bytes, names the direction of the lag, and also
+   refuses an identical file in two repositories that does not carry this header. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

@@ -1,0 +1,14 @@
+# Line endings are LF on every system, whatever git's local setting says.
+#
+# Measured on 2026-09-29, first run of Crusetra Routing's Windows matrix: Git for Windows checks
+# text files out with CRLF by default, and the README check then read a README whose
+# multi-line figure blocks no longer matched what the generator produces (the single-line
+# blocks matched, which is the signature). Nothing in the repository had changed; the checkout
+# had. This repository carries the same figures module (src/figures.ts) and also compares bytes
+# elsewhere: the sealed record and its signature are hashed as written.
+#
+# `text=auto` lets git tell text from binary; `eol=lf` fixes the working-tree ending. The
+# index already holds every text file as LF (see `git ls-files --eol`), so this file changes
+# no committed byte; it stops a checkout from changing them. src/gitattributes.test.ts holds
+# the line below in place.
+* text=auto eol=lf
