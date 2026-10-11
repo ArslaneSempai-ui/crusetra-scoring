@@ -52,6 +52,13 @@ export type PalierId = (typeof PALIERS)[number];
 /** 0,50 → 1,00 par pas de 0,01 : 51 seuils, arrondis au centième, les mêmes que les trois autres outils */
 export const SEUILS: readonly number[] = Array.from({ length: 51 }, (_, i) => Math.round((0.5 + i * 0.01) * 100) / 100);
 
+/**
+ * The bound that a CLIENT record keeps: no weight of the client's risk tables may be read back from the sealed record or from the
+ * report better than this, in score. The grid of thresholds is a histogram of each factor's scores, so its step is that bound.
+ * Declared here before the client grid follows it (grille-client.test.ts reads it and is red until then).
+ */
+export const PAS_CLIENT = 0.05;
+
 /** Un score hors [0, 1] est une erreur nommée, jamais un arrondi silencieux. */
 export function exigerScore(s: number, id: string, d: Dossier): Score {
   if (typeof s !== "number" || Number.isNaN(s) || s < 0 || s > 1) {
