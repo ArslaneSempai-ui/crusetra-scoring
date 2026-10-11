@@ -345,7 +345,8 @@ function sortedKeys(x: unknown): unknown {
   return x;
 }
 
-/** The name and sha256 of each table, sorted by name. The values stay with the client. */
+/** The name and sha256 of each table, sorted by name. The values stay with the client. The
+ *  sha256 is unsalted: it proves which table was used, it does not hide it. */
 export function sealTables(tables: Tables): TableSeal[] {
   return Object.keys(tables).sort().map((name) => ({
     name,
@@ -509,6 +510,8 @@ onboarding_channel, relationship_start, turnovers, ratios, and the entity fields
 --tables=f     your own risk tables (JSON, whole tables only): replaces the declared
                demonstration tables, which are short, assumed, and never an official list.
                The record seals each table's name and sha256, never a weight or a code.
+               The sha256 is unsalted: it proves which table was used, it does not hide it,
+               and a short table could be recovered by guessing its values.
 
 It writes, next to your reviews file and nowhere else:
   <file>-measured.md     the report (no customer, no country, no amount of yours)

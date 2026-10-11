@@ -341,3 +341,14 @@ test("--tables : the record carries each table's name and sha256, and the sha256
   assert.equal(sha(A, "activiteRisque"), sha(B, "activiteRisque"),
     "activiteRisque did not change and its sha256 moved: the seal is not the table's own.");
 });
+
+test("--tables : the usage line and the report both say the sha256 is unsalted, so a seal is not read as a hiding", () => {
+  const maison = mkdtempSync(join(tmpdir(), "amethyste-usage-"));
+  const r = spawnSync(process.execPath, [join(RACINE, "src", "your-reviews.ts")],
+    { cwd: RACINE, encoding: "utf8", timeout: 120_000, env: { ...process.env, HOME: maison, USERPROFILE: maison } });
+  assert.equal(r.status, 0, `the usage must print, not fail:\n${r.stdout}${r.stderr}`);
+  const dit = (texte: string) => /sha256 is unsalted:\s+it proves which table was used,\s+it does not hide\s+it/.test(texte);
+  assert.ok(dit(r.stdout), "the usage line of --tables must say the sha256 is unsalted: it proves the table, it does not hide it");
+  assert.ok(dit(rendreRapport(mesureDe([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], 24))),
+    "the report's provenance paragraph must say the sha256 is unsalted: it proves the table, it does not hide it");
+});

@@ -144,6 +144,8 @@ export function rendreRapport(m: MesureRevues): string {
   l.push(`  all assumed), never a weight or a code, so a changed table shows as a changed sha256;`);
   l.push(`  replace them with yours: \`--tables=<json>\`. Your tables decide every score, and`);
   l.push(`  they stay on your machine: the record seals their sha256 and none of their values.`);
+  l.push(`  The sha256 is unsalted: it proves which table was used, it does not hide it, and a`);
+  l.push(`  short table could be recovered by guessing its values.`);
   l.push(`- seal: ${m.empreinte ?? "(sealed after rendering; see the .json beside this file)"} · `
     + `measured ${m.measuredAt.slice(0, 10)}`
     + (m.code ? ` · code at commit ${m.code.commit}` : ""));
