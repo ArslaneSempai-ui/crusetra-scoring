@@ -68,11 +68,13 @@ export const SEUILS: readonly number[] = Array.from({ length: 51 }, (_, i) => Ma
  * score, is not decided.
  *
  * WHY 0.05, the coarsest step that still serves the review. What the grid serves is the recommended cell: the strictest threshold
- * that holds the recall floor, with the fewest false alerts. On the public record (42 + 42 written dossiers, 126 + 126 generated),
- * for recall floors from 0.5 to 0.8, a step of 0.05 keeps the recommended factor and its false alerts and raises at most one review
- * more than the grid of 0.01 does (76 against 75, generated half, floor 0.5). A step of 0.10 raises up to eleven more (86 against
- * 75), and a step of 0.25 adds ten false alerts (authored half, floors 0.6 to 0.8). What a client loses with 0.05: the recommended
- * threshold sits on one of eleven values, up to one step under the finest optimum, and the cells between are not written.
+ * that holds the recall floor, with the fewest false alerts. `node src/pas-client.ts` prints that cell on the grids of 0.01, 0.05,
+ * 0.10 and 0.25, for the recall floors 0.5 to 0.9 (the default), on both halves of the public record (42 + 42 written dossiers,
+ * 126 + 126 generated), and pas-client.test.ts pins every figure quoted here. At the default floor no cell holds it on any grid.
+ * For the floors 0.5 to 0.8, a step of 0.05 keeps the recommended factor and its false alerts and raises at most one review more
+ * than the grid of 0.01 does; a step of 0.10 raises up to eleven more; a step of 0.25 adds ten false alerts. What a client loses
+ * with 0.05: the recommended threshold sits on one of eleven values, up to one step under the finest optimum, and the cells
+ * between are not written.
  */
 export const PAS_CLIENT = 0.05;
 
