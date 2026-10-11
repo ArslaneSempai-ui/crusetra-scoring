@@ -20,92 +20,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mesurer, mesurerGrille, lireRevues, lireClients } from "./your-reviews.ts";
-import { registre } from "./facteurs/index.ts";
-import { tablesAvec } from "./assumptions.ts";
-import { PAS_CLIENT, SEUILS_CLIENT, combiner } from "./facteur.ts";
-
-const RESEAU = 0.001;           /* the lattice of the oracle */
-const TOLERANCE = 0.0025;       /* two lattice steps and the floating point at the edges of a bracket */
-const POIDS = [0.5127, 0.6173, 0.7291, 0.8844, 0.9563];
-
-type Groupe = { residence: string; nationalite: string; produits: string; activite: string; taille: number; outcome: "escalated" | "maintained" };
-const base = { residence: "FR", nationalite: "FR", produits: "card", activite: "salaried" };
-
-function jeu(groupes: Groupe[]): { revues: string; clients: string } {
-  const r = ["review_id,customer_id,reviewed_at,outcome"];
-  const c = ["customer_id,kind,residence_country,activity_code,products,pep,onboarding_channel,relationship_start,"
-    + "declared_turnover,observed_turnover,cash_ratio,cross_border_ratio,nationality_country,ownership_layers,beneficial_owner_named"];
-  groupes.forEach((g, k) => {
-    for (let i = 0; i < g.taille; i++) {
-      r.push(`g${k}-${i},c${k}-${i},2026-08-30,${g.outcome}`);
-      c.push(`c${k}-${i},individual,${g.residence},${g.activite},${g.produits},none,branch,2020-01-01,50000,48000,0.1,0.1,${g.nationalite},,`);
-    }
-  });
-  return { revues: r.join("\n") + "\n", clients: c.join("\n") + "\n" };
-}
-
-/** A writer: the part of what a measurement writes that does not depend on anything but the customers and the weights. */
-type Ecrivain = (groupes: Groupe[], tables: unknown) => string;
-const FICHIERS = { reviews: "r.csv", reviewsSha: "0".repeat(64), customers: "c.csv", customersSha: "1".repeat(64) };
-const entrees = (groupes: Groupe[]) => {
-  const { revues, clients } = jeu(groupes);
-  const { parClient } = lireClients(clients);
-  return { revues: lireRevues(revues).revues, parClient, fichiers: { ...FICHIERS, customersRows: parClient.size } };
-};
-/** The sealed record, as `mesurer` writes it at a recall floor. */
-const enregistrement = (rappelMin?: number): Ecrivain => (groupes, tables) => {
-  const { revues, parClient, fichiers } = entrees(groupes);
-  const { tables: _empreintes, code: _commit, ...reste } = mesurer(revues, parClient, registre(), fichiers, null,
-    tablesAvec(JSON.stringify(tables)), "2026-10-11T00:00:00.000Z", rappelMin);
-  return JSON.stringify(reste);
-};
-/** The grid that version 1 wrote and that `reduire` now cuts down: every threshold of every factor. */
-const grilleEntiere: Ecrivain = (groupes, tables) => {
-  const { revues, parClient } = entrees(groupes);
-  const { grille, verdicts } = mesurerGrille(revues, parClient, registre(), null, tablesAvec(JSON.stringify(tables)));
-  return JSON.stringify({ grille, verdicts });
-};
-
-/** The run of lattice points, around w0, that write the same as w0: [low, high] in lattice units. */
-function course(ecrire: Ecrivain, groupes: Groupe[], tablesDe: (w: number) => unknown, w0: number): [number, number] {
-  const reference = ecrire(groupes, tablesDe(w0));
-  const identique = (k: number): boolean => ecrire(groupes, tablesDe(k * RESEAU)) === reference;
-  const k0 = Math.round(w0 / RESEAU);
-  assert.ok(identique(k0), `the lattice point next to ${w0} writes another record: the oracle cannot start`);
-  let bas = k0, haut = k0;
-  while (bas > 0 && identique(bas - 1)) bas--;
-  while (haut < 1 / RESEAU && identique(haut + 1)) haut++;
-  return [bas, haut];
-}
-const largeur = ([bas, haut]: [number, number]): number => (haut - bas + 1) * RESEAU;
-
-const CAS = {
-  activite: { nom: "an activity code, read directly",
-    groupes: [{ ...base, activite: "code-x", taille: 80, outcome: "escalated" }, { ...base, taille: 40, outcome: "maintained" }] as Groupe[],
-    tablesDe: (w: number) => ({ activiteRisque: { "code-x": w } }) },
-  pays: { nom: "a country, alone and twice (residence is nationality)",
-    groupes: [{ ...base, residence: "NZ", nationalite: "", taille: 40, outcome: "escalated" },
-      { ...base, residence: "NZ", nationalite: "NZ", taille: 40, outcome: "escalated" }, { ...base, taille: 40, outcome: "maintained" }] as Groupe[],
-    tablesDe: (w: number) => ({ paysRisque: { NZ: w } }) },
-  produit: { nom: "a product, alone and combined with a cheap one",
-    groupes: [{ ...base, produits: "cash", taille: 40, outcome: "escalated" }, { ...base, produits: "cash;wire", taille: 40, outcome: "escalated" },
-      { ...base, taille: 40, outcome: "maintained" }] as Groupe[],
-    tablesDe: (w: number) => ({ produitRisque: { cash: w, wire: POIDS_CHEAP } }) },
-};
-const POIDS_CHEAP = 0.2;
-
-/** The two thresholds of the grid around a score: the strictest that is not above it, and the next. */
-const encadrerGrille = (score: number): [number, number] => {
-  const bas = [...SEUILS_CLIENT].reverse().find((t) => t <= score + 1e-9)!;
-  return [bas, SEUILS_CLIENT[SEUILS_CLIENT.indexOf(bas) + 1]!];
-};
-/** The weight w with combiner([w, w]) = score (a weight that enters one score twice), by bisection on the code's own combiner. */
-function inverseDeuxFois(score: number): number {
-  let bas = 0, haut = 1;
-  for (let i = 0; i < 60; i++) { const m = (bas + haut) / 2; if (combiner([m, m]) < score) bas = m; else haut = m; }
-  return bas;
-}
+import {
+  PAS_CLIENT, combiner, TOLERANCE, POIDS, POIDS_CHEAP, CAS, base, course, largeur, enregistrement, grilleEntiere,
+  encadrerGrille, inverseDeuxFois, type Groupe,
+} from "./oracle-poids.ts";
 
 test("no weight narrows below the step by crossing two brackets of the same weight, as the full grid let it", () => {
   const etroits: string[] = [];

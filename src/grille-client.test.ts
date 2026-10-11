@@ -10,12 +10,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { executer } from "./your-reviews.ts";
 import { registre } from "./facteurs/index.ts";
 import { tablesAvec } from "./assumptions.ts";
 import { PAS_CLIENT, SEUILS_CLIENT } from "./facteur.ts";
+import { faits } from "./oracle-poids.ts";
 
 const surLaGrille = (t: number): boolean => Math.abs(Math.round((t - SEUILS_CLIENT[0]!) / PAS_CLIENT) * PAS_CLIENT - (t - SEUILS_CLIENT[0]!)) < 1e-6;
 
@@ -60,4 +63,47 @@ test("the report and the record name only thresholds of the grid", () => {
   const seuils = Object.values(releve.paliers).flatMap((p) => [p.plancher?.seuil, p.suivant?.seuil]).filter((x): x is number => x !== undefined && x !== null);
   assert.ok(seuils.length >= 2, "the record keeps cells");
   assert.deepEqual(seuils.filter((t) => !surLaGrille(t)), [], "the record keeps a cell at a threshold between two steps of the grid");
+});
+
+/* ─── the claims say exactly what the record lets an observer read, and that another floor means running the tool again ─── */
+
+/** A text as a reader sees it: whitespace and comment asterisks collapsed, lower case. */
+const aplati = (t: string): string => t.replace(/[\s*]+/g, " ").toLowerCase();
+
+test("every claim names the cases in which a weight reads tighter than the step, exactly when they exist, and says that another floor means running measure:yours again", () => {
+  const f = faits();     /* measured by the oracle of record-croise.test.ts: the writer is the witness */
+  assert.equal(f.croisement, false, "no weight narrows by crossing two brackets inside one record any more");
+  const cas: [keyof typeof f, string][] = [["proche", "closer than the step"], ["double", "enters one score twice"], ["enregistrements", "records of the same data"]];
+
+  const racine = fileURLToPath(new URL("..", import.meta.url));
+  const maison = mkdtempSync(join(tmpdir(), "grille-maison-"));
+  const usage = spawnSync(process.execPath, [join(racine, "src/your-reviews.ts")],
+    { cwd: racine, encoding: "utf8", env: { ...process.env, HOME: maison, USERPROFILE: maison } });
+  const source = readFileSync(join(racine, "src/facteur.ts"), "utf8");
+  const apres = source.indexOf("export const PAS_CLIENT");
+  const d = mkdtempSync(join(tmpdir(), "grille-claims-"));
+  const entete = "customer_id,kind,residence_country,activity_code,products,pep,onboarding_channel,relationship_start,declared_turnover,observed_turnover,cash_ratio,cross_border_ratio,nationality_country,ownership_layers,beneficial_owner_named";
+  const r = ["review_id,customer_id,reviewed_at,outcome"], c = [entete];
+  for (let i = 0; i < 40; i++) {
+    r.push(`r${i},c${i},2026-08-30,${i < 8 ? "escalated" : "maintained"}`);
+    c.push(`c${i},individual,FR,code-x,card;wire,none,branch,2020-01-01,50000,48000,0.1,0.1,FR,,`);
+  }
+  writeFileSync(join(d, "revues.csv"), r.join("\n") + "\n");
+  writeFileSync(join(d, "clients.csv"), c.join("\n") + "\n");
+  const { cheminMd } = executer(join(d, "revues.csv"), join(d, "clients.csv"), registre(), null,
+    tablesAvec(JSON.stringify({ activiteRisque: { "code-x": 0.7 } })), 0.5);
+  const lieux: Record<string, string> = {
+    "the Markdown report": readFileSync(cheminMd, "utf8"),
+    "the usage line of measure:yours": `${usage.stdout}${usage.stderr}`,
+    "the README": readFileSync(join(racine, "README.md"), "utf8"),
+    "the comment of PAS_CLIENT": source.slice(source.lastIndexOf("/**", apres), apres),
+  };
+  for (const [lieu, texte] of Object.entries(lieux)) {
+    const lu = aplati(texte);
+    for (const [fait, phrase] of cas) {
+      assert.equal(lu.includes(phrase), f[fait], `${lieu} must say « ${phrase} » exactly when the case exists (it ${f[fait] ? "does" : "does not"})`);
+    }
+    assert.ok(!lu.includes("narrowed by combining"), `${lieu} still says that a weight can be narrowed by combining scores, which the record no longer allows`);
+    assert.ok(lu.includes("measure:yours again"), `${lieu} must say that another recall floor means running measure:yours again`);
+  }
 });
