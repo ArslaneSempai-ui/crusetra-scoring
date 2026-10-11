@@ -9,7 +9,9 @@ one costs analyst time, and nobody can say why a factor sits at its threshold ex
 is how it was configured". This tool measures it: every risk factor is run at every
 threshold over the reviews your analysts already decided, and each factor and threshold cell
 is read for recall on the files that were escalated and false-alert rate on the files that
-were retained, with its count and its interval, or not at all.
+were retained, with its count and its interval, or not at all. The sealed record keeps only the cells for one recall
+floor of yours: per factor, its cell at the floor and the next threshold. The rest of the grid stays on your machine, and
+another floor means running the tool again there.
 
 It is the fourth tool of the Crusetra suite. The first,
 [Crusetra Routing](https://github.com/ArslaneSempai-ui/crusetra-routing), measures which
