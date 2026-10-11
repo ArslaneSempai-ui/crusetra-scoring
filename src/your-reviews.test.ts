@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  lireRevues, lireClients, reconstruire, mesurer, executer, lireVolume, sealTables,
+  lireRevues, lireClients, reconstruire, mesurer, mesurerGrille, executer, lireVolume, sealTables,
   MINIMUM_REVUES, type Revue,
 } from "./your-reviews.ts";
 import { rendreRapport, TROP_PEU_D_ESCALADES, NOTE_PETIT_N } from "./rapport.ts";
@@ -59,13 +59,21 @@ function jeu(cashEscalades: number[], nMaintenues: number,
   return { revues: r.join("\n") + "\n", clients: c.join("\n") + "\n" };
 }
 
-function mesureDe(cashEscalades: number[], nMaintenues: number, volume?: number) {
+function mesureDe(cashEscalades: number[], nMaintenues: number, volume?: number, rappelMin?: number) {
   const { revues, clients } = jeu(cashEscalades, nMaintenues);
   const { revues: r } = lireRevues(revues);
   const { parClient } = lireClients(clients);
   return mesurer(r, parClient, registreFactice(), {
     reviews: "r.csv", reviewsSha: "0".repeat(64), customers: "c.csv", customersSha: "1".repeat(64), customersRows: parClient.size,
-  }, volume ? { origine: "volume", n: volume } : null);
+  }, volume ? { origine: "volume", n: volume } : null, undefined, undefined, rappelMin);
+}
+
+/** The full grid, every threshold of every factor: what `mesurer` measures before the record keeps only a few cells of it. */
+function grilleDe(cashEscalades: number[], nMaintenues: number, volume?: number) {
+  const { revues, clients } = jeu(cashEscalades, nMaintenues);
+  const { revues: r } = lireRevues(revues);
+  const { parClient } = lireClients(clients);
+  return mesurerGrille(r, parClient, registreFactice(), volume ? { origine: "volume", n: volume } : null).grille;
 }
 
 /* ─── les refus du contrat ─── */
@@ -139,7 +147,8 @@ test("l'ancienneté se compte au jour de la revue, et « sans nationalité » vo
   /* The verdict keeps no score, so the factor's reading shows in the cells: at 0.85 the fake
      geography draws the 5 escalated reviews that have a nationality, not e-0 (it scores 0
      without one), and behaviour, which does not read the nationality, draws all 6. */
-  const tireesA85 = (id: PalierId) => m.paliers[id]!.cellules.find((c) => c.seuil === 0.85)!.rappel.successes;
+  const grille = mesurerGrille(r, parClient, registreFactice(), null).grille;
+  const tireesA85 = (id: PalierId) => grille[id]!.cellules.find((c) => c.seuil === 0.85)!.rappel.successes;
   assert.equal(tireesA85("geography"), 5, "le geography factice rend 0 sans nationalité");
   assert.equal(tireesA85("behaviour"), 6, "un facteur non géographique note quand même");
 });
@@ -147,18 +156,18 @@ test("l'ancienneté se compte au jour de la revue, et « sans nationalité » vo
 /* ─── la grille ─── */
 
 test("rappel et fausses alertes comptent les bonnes populations, au bon seuil, >= inclus", () => {
-  const m = mesureDe([0.9, 0.9, 0.8, 0.7, 0.6, 0.55], 24);
-  const c85 = m.paliers.behaviour!.cellules.find((c) => c.seuil === 0.85)!;
+  const m = grilleDe([0.9, 0.9, 0.8, 0.7, 0.6, 0.55], 24);
+  const c85 = m.behaviour!.cellules.find((c) => c.seuil === 0.85)!;
   assert.deepEqual([c85.rappel.successes, c85.rappel.n], [2, 6]);
   assert.deepEqual([c85.faussesAlertes.successes, c85.faussesAlertes.n], [0, 24]);
-  const c55 = m.paliers.behaviour!.cellules.find((c) => c.seuil === 0.55)!;
+  const c55 = m.behaviour!.cellules.find((c) => c.seuil === 0.55)!;
   assert.deepEqual([c55.rappel.successes, c55.rappel.n], [6, 6], "0,55 compte la revue à 0,55 : >= est la règle");
   assert.equal(c55.pourMille, undefined, "sans volume, la colonne n'existe pas");
 });
 
 test("le volume rend les revues pour mille clients ; les facteurs absents sont dits", () => {
   const m = mesureDe([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], 24, 10_000);
-  const c85 = m.paliers.behaviour!.cellules.find((c) => c.seuil === 0.85)!;
+  const c85 = grilleDe([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], 24, 10_000).behaviour!.cellules.find((c) => c.seuil === 0.85)!;
   assert.equal(c85.pourMille, (c85.tirees / 10_000) * 1000);
   assert.ok(m.absents.includes("structure") && m.absents.includes("tenure"));
   assert.match(rendreRapport(m), /absent from the registry/);
@@ -180,7 +189,8 @@ test("--volume et --tables se lisent strictement", () => {
 /* ─── les trois zones du rappel ─── */
 
 test("les zones du rappel : 4 escalades pas citées, 6 citées avec la note, 25 sans elle", () => {
-  const rendu = (n: number) => rendreRapport(mesureDe(Array(n).fill(0.9), 30));
+  /* a floor of 0.5, so that the 6 and the 25 escalations hold a cell and the report has rows to write */
+  const rendu = (n: number) => rendreRapport(mesureDe(Array(n).fill(0.9), 30, undefined, 0.5));
   assert.match(rendu(4), new RegExp(TROP_PEU_D_ESCALADES));
   const r6 = rendu(6);
   assert.match(r6, /100\.0 % \| \[61–100\]/);
@@ -283,7 +293,7 @@ function lancerAvecTables(tables: unknown): { texte: string; releve: Record<stri
   const r = spawnSync(process.execPath, [
     join(RACINE, "src", "your-reviews.ts"),
     `--reviews=${join(d, "revues.csv")}`, `--customers=${join(d, "clients.csv")}`,
-    `--tables=${join(d, "tables.json")}`,
+    `--tables=${join(d, "tables.json")}`, "--recall=0.5",
   ], { cwd: RACINE, encoding: "utf8", timeout: 120_000, env: { ...process.env, HOME: maison, USERPROFILE: maison } });
   assert.equal(r.status, 0, `the run with --tables must succeed to be read:\n${r.stdout}${r.stderr}`);
   const texte = readFileSync(join(d, "revues-measured.json"), "utf8");
@@ -312,7 +322,7 @@ test("--tables : the record holds no table weight and no country code, the clien
     else if (x && typeof x === "object") Object.values(x).forEach(parcourir);
   };
   parcourir(releve);
-  assert.ok(nombres.length > 100, "the walk must have read the record's numbers, verdicts included");
+  assert.ok(nombres.length > 30, "the walk must have read the record's numbers, the kept cells included");
   for (const poids of [0.6173, 0.4829, 0.3917]) {
     assert.ok(!nombres.some((n) => Math.abs(n - poids) < 1e-9),
       `the number ${poids} is in the record: a table weight, written as a score or a rate. `

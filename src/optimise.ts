@@ -31,9 +31,11 @@ export type CellulePlacee = Cellule & { palier: PalierId; rang: number };
  */
 export const MINIMUM_ESCALADES = 5;
 
+/** The cells a record keeps: per factor, its cell at the record's recall floor and the next threshold of the grid. */
 export function cellulesDe(m: MesureRevues): CellulePlacee[] {
   return Object.entries(m.paliers).flatMap(([palier, p]) =>
-    p!.cellules.map((c) => ({ ...c, palier: palier as PalierId, rang: p!.rang })));
+    [p!.plancher, p!.suivant].filter((c): c is NonNullable<typeof c> => c !== null)
+      .map((c) => ({ ...c, palier: palier as PalierId, rang: p!.rang })));
 }
 
 /** La règle de l'outil : borne basse >= exigence, puis le MOINS de fausses alertes,
@@ -76,6 +78,11 @@ export function lireReleve(chemin: string): MesureRevues {
     throw new Error(`${basename(chemin)} is not a scoring record: its kind is `
       + `${JSON.stringify((brut as { kind?: unknown })?.kind ?? null)}.\n`
       + `  Point --from at the <file>-measured.json that measure:yours wrote.`);
+  }
+  if (brut.version !== 2) {
+    throw new Error(`${basename(chemin)} is version ${JSON.stringify((brut as { version?: unknown }).version ?? null)} of the scoring record; this command reads version 2,\n`
+      + `  which keeps only the cells for one recall floor. Version 1 held every threshold of the grid (a histogram\n`
+      + `  of the scores) and is no longer written. Re-run measure:yours on the same files.`);
   }
   if (typeof brut.empreinte !== "string" || !brut.empreinte) {
     throw new Error(`${basename(chemin)} carries no seal; a hand-made record would enter\n`
@@ -130,10 +137,10 @@ async function principal(): Promise<void> {
 The frontier, from a sealed measurement:
 
   npm run optimise -- --from=<file>-measured.json --recall=<min>
-      among cells whose recall LOWER BOUND holds <min>: the fewest false alerts
-
-  npm run optimise -- --from=<file>-measured.json --review-budget=<N>
-      the highest bounded recall under N reviews per month
+      the cell the record keeps for its recall floor: among cells whose recall LOWER BOUND
+      holds the floor, the fewest false alerts. <min> must be the floor the record was
+      measured under; for another floor, run measure:yours again with --recall=<min>.
+      (--review-budget needs the whole frontier, which the record no longer keeps.)
 
 The record comes from: npm run measure:yours -- --customers=<csv> --reviews=<csv>
 `);
@@ -147,9 +154,26 @@ The record comes from: npm run measure:yours -- --customers=<csv> --reviews=<csv
 
   const m = lireReleve(chemin);
   const cellules = cellulesDe(m);
-  console.log(`\n${m.source.reviews} review(s) measured on ${m.measuredAt.slice(0, 10)}, seal ${m.empreinte}: `
-    + `${Object.keys(m.paliers).length} factor(s) × ${new Set(cellules.map((c) => c.seuil)).size} thresholds.`);
+  console.log(`\n${m.source.reviews} review(s) measured on ${m.measuredAt.slice(0, 10)}, seal ${m.empreinte}, recall floor ${m.rappelMin}: `
+    + `${Object.keys(m.paliers).length} factor(s), ${cellules.length} kept cell(s).`);
   if (m.absents.length) console.log(`contract factor(s) absent from that record: ${m.absents.join(", ")}`);
+
+  /* The record keeps the cells for ONE recall floor and nothing else: it is not a grid any more, so it answers neither another
+     floor nor a budget. Said, with the gesture that does answer: run measure:yours again, here, on the same files. */
+  if (brutBudget !== undefined) {
+    console.error(`\n--review-budget needs the whole frontier, and this record keeps only the cells for its recall floor ${m.rappelMin}\n`
+      + `  (a grid of cells is a histogram of the scores: it gave a risk-table weight back to the step of the grid, so it stays on\n`
+      + `  your machine and is not written). Nothing was answered. Ask for the floor the record was measured under with\n`
+      + `  --recall=${m.rappelMin}, or run measure:yours again with another --recall.\n`);
+    process.exit(2);
+  }
+  const min = lireRappelMin(brutRappel!);
+  if (min !== m.rappelMin) {
+    console.error(`\nThis record keeps only the cells for the recall floor it was measured under, ${m.rappelMin}; it holds no cell for ${min},\n`
+      + `  and answering from the cells it has would be a guess. Nothing was answered. Run measure:yours again, on the same\n`
+      + `  files and here, with --recall=${min}: the full grid stays on your machine and is not written.\n`);
+    process.exit(2);
+  }
 
   if (m.source.escalated < MINIMUM_ESCALADES) {
     console.error(`\n${m.source.escalated} confirmed escalation(s) in the record: too few confirmed\n`
@@ -158,58 +182,25 @@ The record comes from: npm run measure:yours -- --customers=<csv> --reviews=<csv
     process.exit(2);
   }
 
-  if (brutRappel !== undefined) {
-    const min = lireRappelMin(brutRappel);
-    const c = meilleureSousRappel(cellules, min);
-    if (!c) {
-      const borne = plusForteBorne(cellules);
-      console.error(`\nNo cell holds a recall lower bound of ${min} on this sample `
-        + `(${m.source.escalated} confirmed escalations).`);
-      console.error(borne === null
-        ? `  No cell has enough confirmed cases to bound recall at all.`
-        : `  The strongest bound available is ${(borne * 100).toFixed(0)} %: lower the floor,`
-          + ` or measure a wider window.`);
-      console.error("");
-      process.exit(1);
-    }
-    console.log(`\nFewest false alerts with the recall lower bound at or above ${min}:\n`);
-    for (const l of decrire(c, m)) console.log(l);
-    const economisees = m.source.reviews - c.tirees;
-    const h = heuresDAnalyste(economisees);
-    console.log(`\nAgainst your current programme's history: ${economisees} review(s) fewer over the`);
-    console.log(`file's period, ${h.heures.toFixed(1)} analyst hour(s), ${symboleDe(UNITS.analystAnnualCost)}${h.usd.toFixed(0)}, computed from:`);
-    console.log(`  ${ligneDHypothese("minutesPerReview")}`);
-    console.log(`  ${ligneDHypothese("analystAnnualCost")} over ${ASSUMPTIONS.workingDaysPerYear} days × ${ASSUMPTIONS.productiveHoursPerDay} h`);
-    console.log(`Change the assumptions and the dollars move; the recall bound does not.\n`);
-    return;
-  }
-
-  const budget = lireBudget(brutBudget!);
-  if (!m.source.periode || m.source.periode.jours <= 0) {
-    console.error(`\n--review-budget is a MONTHLY figure, and the record carries no readable\n`
-      + `  period. Re-measure, or use --recall instead.\n`);
-    process.exit(2);
-  }
-  const c = meilleureSousBudget(cellules, budget, m.source.periode.jours);
+  const palier = m.recommande ? m.paliers[m.recommande] : undefined;
+  const c: CellulePlacee | null = m.recommande && palier?.plancher ? { ...palier.plancher, palier: m.recommande, rang: palier.rang } : null;
   if (!c) {
-    console.error(`\nNo cell fits ${budget} review(s) per month on this history\n`
-      + `  (period measured: ${m.source.periode.jours} day(s)). Raise the budget, or accept an\n`
-      + `  unbounded recall.\n`);
+    console.error(`\nNo cell holds a recall lower bound of ${min} on this sample `
+      + `(${m.source.escalated} confirmed escalations).`);
+    console.error(`  The record keeps no other cell: lower the floor knowingly and run measure:yours again with a lower --recall,`);
+    console.error(`  or measure a wider window.`);
+    console.error("");
     process.exit(1);
   }
-  console.log(`\nHighest bounded recall under ${budget} review(s) per month `
-    + `(period: ${m.source.periode.from} to ${m.source.periode.to}, ${m.source.periode.jours} day(s)):\n`);
+  console.log(`\nFewest false alerts with the recall lower bound at or above ${min}:\n`);
   for (const l of decrire(c, m)) console.log(l);
-  if (c.rappel.low === 0) {
-    console.log(`\n  ⚠ the best recall this budget buys is bounded at ZERO: under ${budget} review(s)`);
-    console.log(`    per month, no cell retains any guaranteed recall. Raise the budget before`);
-    console.log(`    reading anything else here.`);
-  }
-  console.log(`  reviews per month at this cell   ${(c.tirees * (30 / m.source.periode.jours)).toFixed(0)}`);
-  const h = heuresDAnalyste(c.tirees * (30 / m.source.periode.jours));
-  console.log(`\nConcluding them costs ${h.heures.toFixed(1)} analyst hour(s) per month, ${symboleDe(UNITS.analystAnnualCost)}${h.usd.toFixed(0)}, computed from:`);
+  const economisees = m.source.reviews - c.tirees;
+  const h = heuresDAnalyste(economisees);
+  console.log(`\nAgainst your current programme's history: ${economisees} review(s) fewer over the`);
+  console.log(`file's period, ${h.heures.toFixed(1)} analyst hour(s), ${symboleDe(UNITS.analystAnnualCost)}${h.usd.toFixed(0)}, computed from:`);
   console.log(`  ${ligneDHypothese("minutesPerReview")}`);
-  console.log(`  ${ligneDHypothese("analystAnnualCost")} over ${ASSUMPTIONS.workingDaysPerYear} days × ${ASSUMPTIONS.productiveHoursPerDay} h\n`);
+  console.log(`  ${ligneDHypothese("analystAnnualCost")} over ${ASSUMPTIONS.workingDaysPerYear} days × ${ASSUMPTIONS.productiveHoursPerDay} h`);
+  console.log(`Change the assumptions and the dollars move; the recall bound does not.\n`);
 }
 
 if (isMain(import.meta)) {

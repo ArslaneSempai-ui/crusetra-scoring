@@ -5,6 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -70,15 +72,16 @@ test("un relevé retouché est refusé AVANT la frontière, les deux empreintes 
   const { parClient } = lireClients(c.join("\n") + "\n");
   const m = mesurer(revues, parClient, registreFactice(), {
     reviews: "r.csv", reviewsSha: "0".repeat(64), customers: "c.csv", customersSha: "1".repeat(64), customersRows: 30,
-  }, null);
+  }, null, undefined, undefined, 0.5);
   m.empreinte = empreinteDuReleve(m);
 
   const d = mkdtempSync(join(tmpdir(), "amethyste-opt-"));
   const sain = join(d, "x-measured.json");
   writeFileSync(sain, JSON.stringify(m));
   assert.equal(lireReleve(sain).source.reviews, 30);
-  assert.equal(cellulesDe(lireReleve(sain)).length, 2 * SEUILS_CLIENT.length,
-    "deux facteurs factices, la grille entière chacun : le compte est TENU par la constante");
+  const gardees = cellulesDe(lireReleve(sain));
+  assert.ok(gardees.length >= 2 && gardees.length <= 4, "deux facteurs factices : au plus leur cellule sous l'exigence et le seuil suivant chacun");
+  assert.ok(gardees.every((c) => SEUILS_CLIENT.includes(c.seuil)), "chaque cellule gardée est sur la grille");
 
   const retouche = JSON.parse(JSON.stringify(m)) as typeof m;
   retouche.source.escalated = 26;
@@ -94,4 +97,68 @@ test("les heures d'analyste suivent les hypothèses déclarées, et le plancher 
   assert.equal(h.heures, (40 * ASSUMPTIONS.minutesPerReview) / 60);
   assert.equal(h.usd, h.heures * analystHourlyCost());
   assert.equal(MINIMUM_ESCALADES, 5);
+});
+
+/* ─── the record keeps the cells of ONE recall floor: optimise answers that floor, and refuses the rest in words ─── */
+
+const RACINE = fileURLToPath(new URL("..", import.meta.url));
+
+/** A sealed record of 30 reviews (6 escalated) measured at a recall floor, written to a file; `version` 1 is the old shape's number. */
+function releveScelle(rappelMin: number, version = 2): string {
+  const r = ["review_id,customer_id,reviewed_at,outcome"];
+  const c = [("customer_id,kind,residence_country,activity_code,products,pep,"
+    + "onboarding_channel,relationship_start,declared_turnover,observed_turnover,"
+    + "cash_ratio,cross_border_ratio,nationality_country,ownership_layers,beneficial_owner_named")];
+  for (let i = 0; i < 30; i++) {
+    r.push(`x-${i},cli-${i},2026-08-30,${i < 6 ? "escalated" : "maintained"}`);
+    c.push(`cli-${i},individual,FR,salaried,card,none,branch,2020-01-01,100,90,0.9,0.1,FR,,`);
+  }
+  const { parClient } = lireClients(c.join("\n") + "\n");
+  const m = mesurer(lireRevues(r.join("\n") + "\n").revues, parClient, registreFactice(), {
+    reviews: "r.csv", reviewsSha: "0".repeat(64), customers: "c.csv", customersSha: "1".repeat(64), customersRows: 30,
+  }, null, undefined, undefined, rappelMin);
+  const ouvert = m as unknown as { version: number; empreinte?: string };
+  ouvert.version = version;
+  ouvert.empreinte = empreinteDuReleve(m);
+  const chemin = join(mkdtempSync(join(tmpdir(), "amethyste-opt-cli-")), "x-measured.json");
+  writeFileSync(chemin, JSON.stringify(m));
+  return chemin;
+}
+
+function optimise(chemin: string, ...args: string[]): { status: number | null; sortie: string; erreur: string } {
+  const maison = mkdtempSync(join(tmpdir(), "amethyste-opt-maison-"));
+  const r = spawnSync(process.execPath, [join(RACINE, "src", "optimise.ts"), `--from=${chemin}`, ...args],
+    { cwd: RACINE, encoding: "utf8", timeout: 120_000, env: { ...process.env, HOME: maison, USERPROFILE: maison } });
+  return { status: r.status, sortie: r.stdout, erreur: r.stderr };
+}
+
+test("optimise --recall at the floor of the record prints the cell the record keeps", () => {
+  const r = optimise(releveScelle(0.5), "--recall=0.5");
+  assert.equal(r.status, 0, `${r.sortie}${r.erreur}`);
+  assert.match(r.sortie, /recall floor 0\.5/);
+  assert.match(r.sortie, /Fewest false alerts with the recall lower bound at or above 0\.5/);
+  assert.match(r.sortie, /factor (geography|behaviour) at threshold 0\.\d\d/);
+});
+
+test("optimise --recall at another floor is refused in words, naming the floor of the record and the gesture, and answers nothing", () => {
+  const r = optimise(releveScelle(0.5), "--recall=0.8");
+  assert.equal(r.status, 2);
+  assert.match(r.erreur, /only the cells for the recall floor it was measured under, 0\.5; it holds no cell for 0\.8/);
+  assert.match(r.erreur, /run measure:yours again/i);
+  assert.doesNotMatch(r.sortie, /Fewest false alerts/, "a refusal must not print a cell of another floor");
+});
+
+test("optimise --review-budget is refused: it needs the whole frontier, which the record no longer keeps", () => {
+  const r = optimise(releveScelle(0.5), "--review-budget=200");
+  assert.equal(r.status, 2);
+  assert.match(r.erreur, /needs the whole frontier/);
+  assert.match(r.erreur, /--recall=0\.5/, "it names the floor the record does answer");
+  assert.doesNotMatch(r.sortie, /Highest bounded recall/);
+});
+
+test("a record of version 1, which held every threshold of the grid, is refused and says why", () => {
+  const r = optimise(releveScelle(0.5, 1), "--recall=0.5");
+  assert.equal(r.status, 2);
+  assert.match(r.erreur, /is version 1 of the scoring record; this command reads version 2/);
+  assert.match(r.erreur, /Re-run measure:yours/);
 });
