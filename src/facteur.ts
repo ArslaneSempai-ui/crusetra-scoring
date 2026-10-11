@@ -63,7 +63,8 @@ export const SEUILS: readonly number[] = Array.from({ length: 51 }, (_, i) => Ma
  * by DIT_LES_CAS below: the step bounds each score, not each weight. A weight can still read tighter than the step when a kept
  * threshold falls between two scores of one factor that sit closer than the step (a product held alone and with a cheap one, near a
  * weight of 0.9), when it enters one score twice (geography counts a country twice when residence is nationality, so that score is
- * steeper than the weight), or when records of the same data measured at different floors are shared together. It does not narrow
+ * steeper than the weight), when two tables carry the same weight and the observer knows it (the record cannot say so, the observer
+ * must), or when records of the same data measured at different floors are shared together. It does not narrow
  * by crossing two brackets inside one record, which the full grid allowed.
  *
  * WHY 0.05, the coarsest step that still serves the review. What the grid serves is the recommended cell: the strictest threshold
@@ -81,7 +82,8 @@ export const PAS_CLIENT = 0.05;
  *  usage line and the README. record-croise.test.ts measures each case it names; grille-client.test.ts pins that every place says it. */
 export const DIT_LES_CAS = "The step bounds each score, not each weight: a weight can still read tighter than the step when a kept threshold falls "
   + "between two scores of one factor that sit closer than the step, when it enters one score twice (residence equal to nationality in "
-  + "geography), or when records of the same data measured at different floors are shared together.";
+  + "geography), when two tables carry the same weight and the observer knows it, or when records of the same data measured at different "
+  + "floors are shared together.";
 /** And what another recall floor takes. */
 export const DIT_UN_AUTRE_PLANCHER = "The record cannot answer another recall floor: run measure:yours again, here, on the same files, with another --recall.";
 
