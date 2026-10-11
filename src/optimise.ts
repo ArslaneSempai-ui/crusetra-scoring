@@ -1,16 +1,15 @@
 /**
- * LA FRONTIÈRE — deux questions symétriques sur le même relevé scellé :
+ * THE FRONTIER, from what the sealed record keeps and nothing else: the cells of ONE recall floor (`measure:yours --recall`, 0.90
+ * by default), per factor its cell at the floor and the next threshold of the grid. The grid itself is not written: it is a
+ * histogram of each factor's scores, which gave a risk-table weight back.
  *
  *     npm run optimise -- --from=<measured.json> --recall=0.90
- *       → parmi les cellules dont la BORNE BASSE de Wilson tient l'exigence, celle qui
- *         lève le MOINS DE FAUSSES ALERTES (la règle de l'outil) ; « none holds the
- *         floor » se dit tel quel, avec la plus forte borne atteignable ;
+ *       → among the kept cells whose Wilson LOWER BOUND holds the floor, the one with the FEWEST FALSE ALERTS (the rule of the tool);
+ *         "none holds the floor" is said as it is.
  *
- *     npm run optimise -- --from=<measured.json> --review-budget=800
- *       → le rappel maximal (à la borne basse) sous un budget de revues PAR MOIS — la
- *         conversion au mois vient des dates reviewed_at du fichier mesuré.
- *
- * Chaque dollar et chaque heure affichés portent leur hypothèse à côté.
+ * Another recall floor is refused, and so is `--review-budget` (it needs the whole frontier): both in words that name the floor of
+ * the record and the gesture, running measure:yours again, here, on the same files. A record of version 1, which held every
+ * threshold, is refused and says why. Every dollar and every hour shown carries its assumption beside it.
  */
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";

@@ -124,5 +124,5 @@ test("the header of optimise.ts says what optimise does now, not a review budget
   const entete = aplati(source.slice(0, source.indexOf("*/")));
   assert.ok(!entete.includes("review-budget=800"), "the header offers --review-budget=800 as if it answered");
   assert.ok(entete.includes("--review-budget") ? entete.includes("refuse") : true, "the header names --review-budget without saying that it is refused");
-  assert.ok(entete.includes("another floor") || entete.includes("autre exigence") || entete.includes("une autre"), "the header says that another recall floor is refused");
+  assert.ok(entete.includes("another recall floor"), "the header says that another recall floor is refused");
 });
