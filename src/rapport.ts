@@ -9,7 +9,7 @@
 import { table } from "./figures.ts";
 import { rate, cellulesDeTaux, ENOUGH } from "./interval.ts";
 import { cellule } from "./csv.ts";
-import { SEUILS_CLIENT, PAS_CLIENT } from "./facteur.ts";
+import { SEUILS_CLIENT, PAS_CLIENT, DIT_LES_CAS, DIT_UN_AUTRE_PLANCHER } from "./facteur.ts";
 import { ASSUMPTIONS, STATUSES, UNITS, TABLES_STATUS, symboleDe, ligneDHypothese } from "./assumptions.ts";
 import { heuresDAnalyste, MINIMUM_ESCALADES } from "./optimise.ts";
 import type { MesureRevues, Cellule } from "./your-reviews.ts";
@@ -155,8 +155,9 @@ export function rendreRapport(m: MesureRevues): string {
   l.push(`  short table could be recovered by guessing its values.`);
   l.push(`- the grid is not written: the record keeps, per factor, its cell at the recall floor and the next`);
   l.push(`  threshold of a grid ${PAS_CLIENT.toFixed(2)} apart. A grid of cells is a histogram of a factor's scores, and it gave a`);
-  l.push(`  risk-table weight back to the step of the grid; a few cells at one position per factor do not.`);
-  l.push(`  Another floor means running \`measure:yours\` again, here.`);
+  l.push(`  risk-table weight back to the step of the grid; a few cells at one position per factor give it back less.`);
+  l.push(`  ${DIT_LES_CAS}`);
+  l.push(`  ${DIT_UN_AUTRE_PLANCHER}`);
   l.push(`- seal: ${m.empreinte ?? "(sealed after rendering; see the .json beside this file)"} · `
     + `measured ${m.measuredAt.slice(0, 10)}`
     + (m.code ? ` · code at commit ${m.code.commit}` : ""));

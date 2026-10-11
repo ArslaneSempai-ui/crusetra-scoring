@@ -55,17 +55,16 @@ export type PalierId = (typeof PALIERS)[number];
 export const SEUILS: readonly number[] = Array.from({ length: 51 }, (_, i) => Math.round((0.5 + i * 0.01) * 100) / 100);
 
 /**
- * The step of the grid of a CLIENT record, and what it bounds: ONE SCORE. The grid of thresholds is a histogram of each factor's
- * scores (a group of customers that share a score steps recall from 100 % to 0 between the two thresholds that bracket it), so a
- * weight that a score reads directly shows in that score's grid no better than within this step; the grid of a client record
- * follows it (`SEUILS_CLIENT`; grille-client.test.ts reads it).
- *
- * It is NOT a bound per weight. A weight that enters several scores can be narrowed by combining them: geography is `combiner`
- * (noisy-OR) of the weight of the residence and the weight of the nationality, so a group whose nationality is unknown brackets w
- * and a group whose nationality is its residence brackets 1 - (1 - w)^2, and the intersection of the two brackets is narrower than
- * the step (grille-client.test.ts computes it and pins the claims to it). The products of a customer, and the signals of the
- * exposure, structure, behaviour and tenure factors, combine the same way. A mechanism that bounds a weight itself, and not a
- * score, is not decided.
+ * The step of the grid of a CLIENT record. The grid is a histogram of each factor's scores (a group of customers that share a score
+ * steps recall from 100 % to 0 between the two thresholds that bracket it), and a histogram gave a risk-table weight back, so the
+ * record no longer holds the grid: it keeps, per factor, only the cell the rule of optimise picks under ONE recall floor and the next
+ * threshold of this grid (`reduire`, your-reviews.ts), and the grid itself stays on the client's machine. Another floor means
+ * running measure:yours again, here. What is left, measured with the writer as the oracle (record-croise.test.ts) and said exactly
+ * by DIT_LES_CAS below: the step bounds each score, not each weight. A weight can still read tighter than the step when a kept
+ * threshold falls between two scores of one factor that sit closer than the step (a product held alone and with a cheap one, near a
+ * weight of 0.9), when it enters one score twice (geography counts a country twice when residence is nationality, so that score is
+ * steeper than the weight), or when records of the same data measured at different floors are shared together. It does not narrow
+ * by crossing two brackets inside one record, which the full grid allowed.
  *
  * WHY 0.05, the coarsest step that still serves the review. What the grid serves is the recommended cell: the strictest threshold
  * that holds the recall floor, with the fewest false alerts. `node src/pas-client.ts` prints that cell on the grids of 0.01, 0.05,
@@ -77,6 +76,14 @@ export const SEUILS: readonly number[] = Array.from({ length: 51 }, (_, i) => Ma
  * between are not written.
  */
 export const PAS_CLIENT = 0.05;
+
+/** What a client is told about how far a weight can be read back from the record: said once here, and quoted by the report, the
+ *  usage line and the README. record-croise.test.ts measures each case it names; grille-client.test.ts pins that every place says it. */
+export const DIT_LES_CAS = "The step bounds each score, not each weight: a weight can still read tighter than the step when a kept threshold falls "
+  + "between two scores of one factor that sit closer than the step, when it enters one score twice (residence equal to nationality in "
+  + "geography), or when records of the same data measured at different floors are shared together.";
+/** And what another recall floor takes. */
+export const DIT_UN_AUTRE_PLANCHER = "The record cannot answer another recall floor: run measure:yours again, here, on the same files, with another --recall.";
 
 /** 0,50 → 1,00 par pas de PAS_CLIENT : la grille d'un relevé CLIENT (`measure:yours`), onze seuils. */
 export const SEUILS_CLIENT: readonly number[] = Array.from({ length: Math.round(0.5 / PAS_CLIENT) + 1 },

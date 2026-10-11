@@ -19,10 +19,12 @@
  *
  * The risk tables of `--tables` are your risk policy, so the record carries each table as
  * a name and a sha256 only (see `sealTables`): a changed table shows, no weight and no
- * country code leaves. And its grid of thresholds is `SEUILS_CLIENT`, PAS_CLIENT apart: the
- * grid is a histogram of each factor's scores, so a score shows in it no better than that
- * step, and a weight that enters several scores can be narrowed by combining them
- * (grille-client.test.ts plants weights and reads them back, alone and combined).
+ * country code leaves. And the grid of thresholds (`SEUILS_CLIENT`, PAS_CLIENT apart) does not
+ * leave either: it is a histogram of each factor's scores, so the record keeps, per factor, only
+ * the cell the rule of `optimise` picks under ONE recall floor (`--recall`) and the next threshold
+ * (`reduire`). Another floor means running this command again, here. What that still lets an
+ * observer read of a weight is measured with the writer as the oracle (record-croise.test.ts)
+ * and said by DIT_LES_CAS (facteur.ts).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -31,7 +33,7 @@ import { execFileSync } from "node:child_process";
 import { isMain, refuserDrapeauxInconnus } from "./cli.ts";
 import { lireTable, apercu, MONTRES } from "./csv.ts";
 import { rate, type Rate } from "./interval.ts";
-import { SEUILS_CLIENT, PAS_CLIENT, PALIERS, type PalierId, type Registre, type Tables } from "./facteur.ts";
+import { SEUILS_CLIENT, PAS_CLIENT, DIT_LES_CAS, DIT_UN_AUTRE_PLANCHER, PALIERS, type PalierId, type Registre, type Tables } from "./facteur.ts";
 import { KINDS, PEPS, PRODUITS, CANAUX, exigerDossier,
          type Dossier, type Kind, type Pep, type Produit, type Canal } from "./dossier.ts";
 import { TABLES, ASSUMPTIONS, tablesAvec } from "./assumptions.ts";
@@ -560,8 +562,8 @@ onboarding_channel, relationship_start, turnovers, ratios, and the entity fields
                ${ASSUMPTIONS.recallFloor.toFixed(2)}). The record keeps ONLY the cells for that floor: per factor, its cell at
                the floor (the strictest threshold that holds it, with the fewest false alerts)
                and the next threshold of a grid ${PAS_CLIENT.toFixed(2)} apart. The full grid stays on your machine and
-               is not written. To re-optimize at another floor, run this command again here
-               with another --recall: the record cannot answer it, and optimise refuses.
+               is not written. ${DIT_UN_AUTRE_PLANCHER} optimise refuses it.
+               ${DIT_LES_CAS}
 --tables=f     your own risk tables (JSON, whole tables only): replaces the declared
                demonstration tables, which are short, assumed, and never an official list.
                The record seals each table's name and sha256, never a weight or a code.

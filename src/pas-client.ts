@@ -3,7 +3,7 @@
  *
  *     node src/pas-client.ts
  *
- * The grid of a client record is PAS_CLIENT apart (facteur.ts) so that a score shows in it no better than that step. What the grid
+ * The grid of a client record is PAS_CLIENT apart (facteur.ts), and the record keeps only a few cells of it. What the grid
  * serves is the recommended cell: the strictest threshold that holds the recall floor, with the fewest false alerts (the rule of
  * `optimise`, `meilleureSousRappel`, applied here, not copied). This reads the sealed public record (42 + 42 written dossiers,
  * 126 + 126 generated), keeps the thresholds that sit on each grid, and prints for every recall floor from 0.5 to the default
