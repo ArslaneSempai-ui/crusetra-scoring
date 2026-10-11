@@ -21,7 +21,9 @@ import { join } from "node:path";
 import { executer } from "./your-reviews.ts";
 import { registre } from "./facteurs/index.ts";
 import { tablesAvec } from "./assumptions.ts";
-import { PAS_CLIENT } from "./facteur.ts";
+import { PAS_CLIENT, combiner } from "./facteur.ts";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const TOLERANCE = 1e-9;
 
@@ -126,4 +128,82 @@ test("a client's table weight is bracketed no tighter than the grid's step, in t
   assert.match(md, /next step \(threshold/, "the fixture reaches a recommendation, so the next step is printed");
   const horsGrille = imprimes.filter((t) => Math.abs(Math.round((t - 0.5) / PAS_CLIENT) * PAS_CLIENT - (t - 0.5)) > 1e-6);
   assert.deepEqual(horsGrille, [], `the report prints thresholds finer than the grid: ${horsGrille.join(", ")}`);
+});
+
+/* ─── the bound holds per score, not per weight: combining the scores a weight enters narrows it ─── */
+
+/** geography is `combiner` of the weight of the residence and the weight of the nationality, the nationality left out when it is
+ *  unknown. A group whose nationality is unknown scores w; a group whose nationality IS its residence scores 1 - (1 - w)^2. Both
+ *  brackets are read from the same record, and each of them is `PAS_CLIENT` wide: together they say more than either. */
+const POIDS_PAYS = 0.6173;
+const PAYS = [
+  { nom: "residence only", nationalite: "", taille: 8 },
+  { nom: "residence and nationality", nationalite: "NZ", taille: 16 },
+  { nom: "elsewhere", nationalite: "FR", taille: 8 },
+] as const;
+
+/** The weight w such that combiner([w, w]) = score, by bisection on the code's own `combiner`. */
+function inverseDeuxFois(score: number): number {
+  let bas = 0, haut = 1;
+  for (let i = 0; i < 60; i++) {
+    const milieu = (bas + haut) / 2;
+    if (combiner([milieu, milieu]) < score) bas = milieu; else haut = milieu;
+  }
+  return bas;
+}
+
+test("the bound holds per score, not per weight: the claims say that a weight that enters several scores can be narrowed", () => {
+  const r = ["review_id,customer_id,reviewed_at,outcome"];
+  const c = ["customer_id,kind,residence_country,activity_code,products,pep,onboarding_channel,relationship_start,"
+    + "declared_turnover,observed_turnover,cash_ratio,cross_border_ratio,nationality_country,ownership_layers,beneficial_owner_named"];
+  for (const g of PAYS) {
+    for (let i = 0; i < g.taille; i++) {
+      const residence = g.nom === "elsewhere" ? "FR" : "NZ";
+      r.push(`${g.nom.replace(/ /g, "-")}-${i},cust-${g.nom.replace(/ /g, "-")}-${i},2026-08-30,${i % 2 ? "escalated" : "maintained"}`);
+      c.push(`cust-${g.nom.replace(/ /g, "-")}-${i},individual,${residence},salaried,card;wire,none,branch,2020-01-01,50000,48000,0.1,0.1,${g.nationalite},,`);
+    }
+  }
+  const d = mkdtempSync(join(tmpdir(), "grille-combinee-"));
+  writeFileSync(join(d, "revues.csv"), r.join("\n") + "\n");
+  writeFileSync(join(d, "clients.csv"), c.join("\n") + "\n");
+  const tables = tablesAvec(JSON.stringify({ paysRisque: { NZ: POIDS_PAYS } }));
+  const { cheminJson, cheminMd } = executer(join(d, "revues.csv"), join(d, "clients.csv"), registre(), null, tables);
+  const cellules = (JSON.parse(readFileSync(cheminJson, "utf8")) as Releve).paliers.geography!.cellules;
+  const encadre = (taille: number): [number, number] => {
+    for (let k = 0; k + 1 < cellules.length; k++) {
+      if (cellules[k]!.tirees - cellules[k + 1]!.tirees === taille) return [cellules[k]!.seuil, cellules[k + 1]!.seuil];
+    }
+    throw new Error(`no drop of ${taille} in the geography cells`);
+  };
+
+  /* each score alone keeps the bound: a bracket of the grid's own step */
+  const [basA, hautA] = encadre(8);
+  const [basB, hautB] = encadre(16);
+  assert.ok(hautA - basA >= PAS_CLIENT - TOLERANCE && hautB - basB >= PAS_CLIENT - TOLERANCE, "each score alone is bracketed by one step of the grid");
+  /* the weight in each: [basA, hautA) from the residence-only group, [inverse(basB), inverse(hautB)) from the other */
+  const bas = Math.max(basA, inverseDeuxFois(basB));
+  const haut = Math.min(hautA, inverseDeuxFois(hautB));
+  assert.ok(bas <= POIDS_PAYS && POIDS_PAYS < haut, "the weight lies in the intersection (the detector is sound)");
+  const largeur = haut - bas;
+  assert.ok(largeur < PAS_CLIENT - TOLERANCE,
+    `the intersection of the two brackets is ${largeur.toFixed(4)} wide, under the step ${PAS_CLIENT}: combining narrows it`);
+
+  /* so no claim may say that a weight shows no better than the step, in any place where it is made: each must carry the caveat,
+     exactly when the combination does narrow the weight (if a mechanism ever restores a per-weight bound, the caveat must go) */
+  const racine = fileURLToPath(new URL("..", import.meta.url));
+  const maison = mkdtempSync(join(tmpdir(), "grille-maison-"));
+  const usage = spawnSync(process.execPath, [join(racine, "src/your-reviews.ts")],
+    { cwd: racine, encoding: "utf8", env: { ...process.env, HOME: maison, USERPROFILE: maison } });
+  const source = readFileSync(join(racine, "src/facteur.ts"), "utf8");
+  const lieux: Record<string, string> = {
+    "the Markdown report": readFileSync(cheminMd, "utf8"),
+    "the usage line of measure:yours": `${usage.stdout}${usage.stderr}`,
+    "the README": readFileSync(join(racine, "README.md"), "utf8"),
+    "the comment of PAS_CLIENT": source.slice(source.lastIndexOf("/**", source.indexOf("export const PAS_CLIENT")), source.indexOf("export const PAS_CLIENT")),
+  };
+  const narrows = largeur < PAS_CLIENT - TOLERANCE;
+  for (const [lieu, texte] of Object.entries(lieux)) {
+    assert.equal(/narrowed by combining/.test(texte), narrows,
+      `${lieu} must say that a weight that enters several scores can be narrowed by combining them, exactly when it can (it can: ${narrows})`);
+  }
 });
