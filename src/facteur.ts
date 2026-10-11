@@ -6,8 +6,8 @@
  * enregistrés par `src/facteurs/index.ts` (`registre()`). La mesure (L4) et la mesure client
  * (L3) balaient chaque facteur sur les 51 seuils de SEUILS et lisent rappel et fausses
  * alertes par cellule. Un facteur ne lit JAMAIS une constante à lui : les listes, poids et
- * échelles arrivent par `Tables` (src/assumptions.ts, lot L3), photographiées dans le relevé
- * scellé, remplaçables par celles du client.
+ * échelles arrivent par `Tables` (src/assumptions.ts, lot L3), remplaçables par celles du
+ * client. A client's run seals each table's name and sha256, never its values.
  *
  * Déterministe, sans réseau, sans état : le même Dossier et les mêmes Tables rendent le
  * même score, sur toute machine.

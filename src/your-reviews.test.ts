@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  lireRevues, lireClients, reconstruire, mesurer, executer, lireVolume,
+  lireRevues, lireClients, reconstruire, mesurer, executer, lireVolume, sealTables,
   MINIMUM_REVUES, type Revue,
 } from "./your-reviews.ts";
 import { rendreRapport, TROP_PEU_D_ESCALADES, NOTE_PETIT_N } from "./rapport.ts";
@@ -183,9 +183,8 @@ test("les zones du rappel : 4 escalades pas citées, 6 citées avec la note, 25 
 /* ─── never a value, avec témoin ─── */
 
 test("le relevé et le rapport ne portent AUCUNE valeur du client, et le détecteur sait voir", () => {
-  /* « NZ » et non « KY » : KY vit dans la TABLE DÉCLARÉE, photographiée dans le relevé
-     par construction : le témoin l'a trouvé et il avait raison de chercher : la sentinelle
-     du client doit être un pays hors table, sinon le test accuse la photographie. */
+  /* "NZ" and not "KY": the sentinel stays a country that no declared table holds, so the
+     test never depends on how the tables travel in the record (today by name and sha256). */
   const SENTINELLES = ["CLI-SENTINELLE-9", "NZ", "casino-sentinelle", "987654.32"];
   const d = mkdtempSync(join(tmpdir(), "amethyste-"));
   const cheminR = join(d, "revues.csv");
@@ -212,16 +211,31 @@ test("le relevé et le rapport ne portent AUCUNE valeur du client, et le détect
   assert.ok(typeof mesure.verdicts["rv-0"]!.scores.behaviour === "number");
 });
 
-/* ─── le scellé et les tables photographiées ─── */
+/* ─── le scellé et l'empreinte des tables ─── */
 
-test("le relevé est scellable, une retouche le fait mentir, et il photographie ses tables", () => {
+test("le relevé est scellable, une retouche le fait mentir, et il scelle le nom et le sha256 de ses tables", () => {
   const m = mesureDe([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], 24);
   m.empreinte = empreinteDuReleve(m);
   assert.ok(scelleIntact(m as unknown as Record<string, unknown>));
   const copie = JSON.parse(JSON.stringify(m)) as typeof m;
   copie.source.escalated = 25;
   assert.ok(!scelleIntact(copie as unknown as Record<string, unknown>));
-  assert.deepEqual(m.tables, TABLES, "les changer change les scores : elles voyagent scellées");
+  /* The record seals one { name, sha256 } per declared table, never a weight or a code. */
+  assert.deepEqual(m.tables.map((t) => t.name), Object.keys(TABLES).sort(),
+    "une entrée par table déclarée, par son nom");
+  assert.ok(m.tables.every((t) => /^[0-9a-f]{64}$/.test(t.sha256)), "chaque table porte un sha256 de 64 hex");
+  assert.deepEqual(m.tables, sealTables(TABLES), "le sha256 est celui du contenu de la table");
+  assert.ok(!JSON.stringify(m.tables).includes("KY"), "aucun code pays de la table déclarée ne sort");
+});
+
+test("sealTables : le sha256 suit le contenu de la table, pas l'ordre de ses clés", () => {
+  const A = sealTables(tablesAvec('{"paysRisque": {"NZ": 0.6, "CL": 0.4}}'));
+  const memeContenuAutreOrdre = sealTables(tablesAvec('{"paysRisque": {"CL": 0.4, "NZ": 0.6}}'));
+  const unPoidsChange = sealTables(tablesAvec('{"paysRisque": {"NZ": 0.6, "CL": 0.5}}'));
+  assert.deepEqual(A, memeContenuAutreOrdre, "l'ordre des clés écrit par le client ne change pas le sha256");
+  const sha = (l: ReturnType<typeof sealTables>, nom: string) => l.find((t) => t.name === nom)!.sha256;
+  assert.notEqual(sha(A, "paysRisque"), sha(unPoidsChange, "paysRisque"), "un poids change : le sha256 bouge");
+  assert.equal(sha(A, "produitRisque"), sha(unPoidsChange, "produitRisque"), "une table intacte garde son sha256");
 });
 
 /* ─── --tables : the record seals each table's fingerprint, never its values ─── */

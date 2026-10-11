@@ -16,6 +16,10 @@
  * Les sorties portent des comptes, des taux, des intervalles et un verdict par
  * `review_id` : JAMAIS un customer_id, un pays, un code d'activité ou un montant. Un test
  * plante des sentinelles dans chaque colonne et prouve d'abord que son détecteur voit.
+ *
+ * The risk tables of `--tables` are your risk policy, so the record carries each table as
+ * a name and a sha256 only (see `sealTables`): a changed table shows, no weight and no
+ * country code leaves.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -314,14 +318,40 @@ export type MesureRevues = {
   };
   customers: { file: string; sha256: string; rows: number };
   volume: { origine: "volume"; n: number } | null;
-  /** les tables SOUS LESQUELLES ce relevé a été mesuré : les changer change les scores */
-  tables: Tables;
+  /** The tables UNDER WHICH this record was measured, by name and sha256 and never by
+   *  value: changing a table changes the scores, and the sha256 shows it. */
+  tables: TableSeal[];
   paliers: Partial<Record<PalierId, MesurePalier>>;
   absents: PalierId[];
   verdicts: Record<string, { outcome: Outcome; sansNationalite: boolean; scores: Partial<Record<PalierId, number>> }>;
   code: { commit: string } | null;
   empreinte?: string;
 };
+
+/** One risk table as the record holds it: its name and the sha256 of its content. */
+export type TableSeal = { name: string; sha256: string };
+
+/** The same JSON with every object's keys sorted, so a table hashes the same whatever
+ *  order its author wrote the keys in. */
+function sortedKeys(x: unknown): unknown {
+  if (Array.isArray(x)) return x.map(sortedKeys);
+  if (x && typeof x === "object") {
+    return Object.fromEntries(Object.entries(x as Record<string, unknown>)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => [k, sortedKeys(v)]));
+  }
+  return x;
+}
+
+/** The name and sha256 of each table, sorted by name. The values stay with the client. */
+export function sealTables(tables: Tables): TableSeal[] {
+  return Object.keys(tables).sort().map((name) => ({
+    name,
+    sha256: createHash("sha256")
+      .update(JSON.stringify(sortedKeys((tables as unknown as Record<string, unknown>)[name])))
+      .digest("hex"),
+  }));
+}
 
 export function periodeDe(revues: readonly Revue[]): MesureRevues["source"]["periode"] {
   const dates = revues.map((r) => Date.parse(r.dateRevue));
@@ -394,7 +424,7 @@ export function mesurer(
     },
     customers: { file: basename(fichiers.customers), sha256: fichiers.customersSha,
       rows: fichiers.customersRows },
-    volume, tables, paliers,
+    volume, tables: sealTables(tables), paliers,
     absents: PALIERS.filter((p) => !registre.has(p)),
     verdicts,
     code: commitCourant(),
@@ -475,10 +505,12 @@ onboarding_channel, relationship_start, turnovers, ratios, and the entity fields
 --volume=N     customers in the portfolio: buys reviews-per-thousand, never estimated.
 --tables=f     your own risk tables (JSON, whole tables only): replaces the declared
                demonstration tables, which are short, assumed, and never an official list.
+               The record seals each table's name and sha256, never a weight or a code.
 
 It writes, next to your reviews file and nowhere else:
   <file>-measured.md     the report (no customer, no country, no amount of yours)
-  <file>-measured.json   the sealed record: counts, rates, verdicts by review_id
+  <file>-measured.json   the sealed record: counts, rates, verdicts by review_id,
+                         the sha256 of each risk table
 
 Then: npm run optimise -- --from=<file>-measured.json --recall=0.90
 Nothing about your files leaves this machine.
