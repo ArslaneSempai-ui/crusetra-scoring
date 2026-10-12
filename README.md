@@ -35,7 +35,15 @@ your machine.
 
 ## Requirements
 
-Node 24 or newer, on **macOS or Linux**. Windows has not been tested and is not claimed.
+Node 24 or newer, on **Linux, macOS or Windows**. The suite ran green on all three, each on
+Node 24 and Node 26, in the workflow `.github/workflows/tests.yml`: see the
+[run on main](https://github.com/ArslaneSempai-ui/crusetra-scoring/actions/runs/38153262515),
+whose Windows jobs are
+[Node 24](https://github.com/ArslaneSempai-ui/crusetra-scoring/actions/runs/38153262515/job/114510913014)
+and
+[Node 26](https://github.com/ArslaneSempai-ui/crusetra-scoring/actions/runs/38153262515/job/114510913004).
+No other system is claimed, and `src/readme-platforms.test.ts` keeps this paragraph equal to
+that workflow's matrix.
 
 ## What leaves your machine
 
@@ -59,7 +67,7 @@ reports are verified against the same public key, [`cle-publique.pem`](cle-publi
 with `npm run verify`.
 
 <!-- figures:tests -->
-**127 tests** across 19 files, counted by running the suite rather than typed here.
+**129 tests** across 20 files, counted by running the suite rather than typed here.
 <!-- /figures:tests -->
 
 ## Licence
