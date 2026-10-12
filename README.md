@@ -35,15 +35,15 @@ your machine.
 
 ## Requirements
 
-Node 24 or newer, on **Linux, macOS or Windows**. The suite ran green on all three, each on
-Node 24 and Node 26, in the workflow `.github/workflows/tests.yml`: see the
+The floor is Node 24 (`engines` in `package.json`). The suite ran green on **Linux, macOS and
+Windows**, each on Node 24 and Node 26, in the workflow `.github/workflows/tests.yml`: see the
 [run on main](https://github.com/ArslaneSempai-ui/crusetra-scoring/actions/runs/38153262515),
 whose Windows jobs are
 [Node 24](https://github.com/ArslaneSempai-ui/crusetra-scoring/actions/runs/38153262515/job/114510913014)
 and
 [Node 26](https://github.com/ArslaneSempai-ui/crusetra-scoring/actions/runs/38153262515/job/114510913004).
-No other system is claimed, and `src/readme-platforms.test.ts` keeps this paragraph equal to
-that workflow's matrix.
+Only those three systems and those two Node versions were run, and `src/readme-platforms.test.ts`
+keeps the systems and Node versions named here equal to that workflow's matrix.
 
 ## What leaves your machine
 

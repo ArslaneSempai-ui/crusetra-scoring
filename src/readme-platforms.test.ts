@@ -11,11 +11,13 @@ import { fileURLToPath } from "node:url";
  * The matrix of .github/workflows/tests.yml has since run ubuntu, macOS and Windows, each on
  * Node 24 and Node 26, and a push to main went green on every cell. A claim of that kind is
  * only worth what backs it, so this case keeps it true in both directions: every system and
- * every Node version of the matrix is named in the Requirements section, no system the matrix
- * lacks is claimed there, an Actions run URL of THIS repository backs the claim (a run of a
- * sister tool proves nothing here), and the old disclaimer is gone. The matrix is read from
- * the workflow, never copied into this file, so adding a system or a Node version to the
- * workflow turns this case red until the README says so. The witness case plays each fault on
+ * every Node version of the matrix is named in the Requirements section, no system and no Node
+ * version the matrix lacks is named there, an Actions run URL of THIS repository backs the claim
+ * (a run of a sister tool proves nothing here), and no disclaimer about a system survives
+ * (not tested, untested, not claimed, not supported, unsupported, wrapped across lines or in
+ * capitals: a README that says "Windows is not supported" would otherwise pass). The matrix is
+ * read from the workflow, never copied into this file, so adding a system or a Node version to
+ * the workflow turns this case red until the README says so. The witness case plays each fault on
  * a fabricated README and a fabricated workflow: without it, a reader that finds nothing
  * would turn a missing section into the only red and a wrong claim into green.
  *
@@ -28,6 +30,9 @@ const PACKAGE = fileURLToPath(new URL("../package.json", import.meta.url));
 
 /** The names a README uses for the runner labels of the matrix. */
 const SYSTEM_NAMES: Record<string, string> = { ubuntu: "Linux", macos: "macOS", windows: "Windows" };
+
+/** The ways a README disclaims a system: not tested, untested, not claimed, not supported, unsupported; wrapped lines included. */
+const DISCLAIMER = /\bnot\s+(?:been\s+)?(?:tested|claimed|supported)\b|\b(?:untested|unsupported)\b/i;
 
 function withoutComments(text: string): string {
   return text.split(/\r?\n/).map((l) => (/^\s*#/.test(l) ? "" : l.replace(/\s+#.*$/, ""))).join("\n");
@@ -78,8 +83,11 @@ function faults(readme: string, workflow: string, packageName: string): string[]
   } else if (!runs.some((r) => r[2] === packageName)) {
     out.push(`the Requirements section cites no run of ${packageName}: a run of another repository proves nothing here`);
   }
-  if (/has not been tested|is not claimed|not tested/i.test(section)) {
-    out.push("the Requirements section still carries a 'not tested' or 'not claimed' disclaimer about a system the matrix holds");
+  for (const m of section.matchAll(/\bNode (\d+)\b/g)) {
+    if (!node.includes(m[1]!)) out.push(`the Requirements section names Node ${m[1]}, which the matrix does not hold: nothing broader than the CI proved`);
+  }
+  if (DISCLAIMER.test(section)) {
+    out.push("the Requirements section still carries a 'not tested', 'not claimed' or 'not supported' disclaimer about a system the matrix holds");
   }
   return out;
 }
@@ -101,6 +109,15 @@ test("witness: each fault is seen on a fabricated README and workflow", () => {
   assert.ok(f1.some((f) => /cites no Actions run URL/.test(f)), f1.join("\n"));
   assert.ok(f1.some((f) => /still carries a 'not tested'/.test(f)), f1.join("\n"));
   assert.ok(f1.some((f) => /holds Node 26 but/.test(f)), f1.join("\n"));
+
+  for (const phrase of ["Windows has not been tested", "Windows is not tested", "Windows is untested", "Windows is not claimed",
+    "Windows is not supported", "Windows is unsupported", "Windows is not\nclaimed", "Windows is NOT SUPPORTED"]) {
+    const disclaimed = faults(good.replace("\n\n## Next", ` ${phrase}.\n\n## Next`), workflow, "pkg");
+    assert.ok(disclaimed.some((f) => /still carries a 'not tested'/.test(f)), `"${phrase}" is not seen as a disclaimer: ${disclaimed.join("\n")}`);
+  }
+
+  const nodeBeyond = faults(good.replace("Node 26:", "Node 26 and Node 25:"), workflow, "pkg");
+  assert.ok(nodeBeyond.some((f) => /names Node 25, which the matrix does not hold/.test(f)), `a Node version beyond the matrix is not seen: ${nodeBeyond.join("\n")}`);
 
   const silent = faults(good.replace("Linux, macOS and Windows", "Linux and macOS"), workflow, "pkg");
   assert.ok(silent.some((f) => /does not name Windows/.test(f)), silent.join("\n"));
