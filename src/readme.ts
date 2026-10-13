@@ -17,14 +17,15 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { run, table } from "./figures.ts";
+import { PAS_CLIENT, DIT_LES_CAS, DIT_UN_AUTRE_PLANCHER } from "./facteur.ts";
 
 /* ─── les commandes, dans l'ordre où elles ont un sens ─── */
 export const COMMANDES: [string, string][] = [
   ["npm ci --ignore-scripts", "install exactly the versions the lockfile pins, and run no install script from any dependency; the only command that needs the network: this tool downloads nothing else, ever"],
   ["npm run test", "types, the README blocks, the licence inventory, and the suite. Start here; it runs with the network cut"],
   ["npm run measure [-- --yes-overwrite]", "the public measure: every risk factor at every threshold on dossiers we wrote (retained files included) plus declared generated variants, sealed into `releve-public.json` and readable in `RELEVE-PUBLIC.md`: no real customer is public, and the record says so; it refuses to overwrite a sealed one without the flag"],
-  ["npm run measure:yours -- --customers=<csv> --reviews=<csv> [--volume=N]", "your own periodic reviews, rebuilt into dossiers from your customer attributes: recall on escalated customers and false-alert rate on maintained ones per risk factor and threshold, with n and interval; a sealed record and a report beside your file, never a value of yours"],
-  ["npm run optimise -- --from=<record> --recall=<min>", "the best trade-off: fewest alerts with the recall lower bound held, or `--review-budget=<N>` for the highest bounded recall under a yearly review budget"],
+  ["npm run measure:yours -- --customers=<csv> --reviews=<csv> [--volume=N] [--recall=<min>]", `your own periodic reviews, rebuilt into dossiers from your customer attributes: recall on escalated customers and false-alert rate on maintained ones per risk factor at your recall floor, with n and interval; a sealed record and a report beside your file, with no value of yours written out: the record keeps, per factor, only its cell at your recall floor and the next threshold of a grid ${PAS_CLIENT.toFixed(2)} apart, never the grid. ${DIT_UN_AUTRE_PLANCHER} ${DIT_LES_CAS}`],
+  ["npm run optimise -- --from=<record> --recall=<min>", "the cell the record keeps for its own recall floor (the fewest false alerts with the recall lower bound held); it refuses another floor, and `--review-budget`, which needs the whole frontier that the record no longer keeps: for another floor, run `measure:yours` again with another `--recall`"],
   ["npm run sceller -- <record.json>", "seal a record: the content hash that makes a silently edited measurement fail loudly; the same content hash as Crusetra Routing"],
   ["npm run verify -- <report>", "check that a report was issued by the holder of the suite's public key, `cle-publique.pem`, without asking us"],
   ["npm run licences", "regenerate `LICENCES.md`, the licence of every shipped package; `--check` fails the suite when the table drifts"],

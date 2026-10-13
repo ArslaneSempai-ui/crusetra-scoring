@@ -19,7 +19,12 @@
  *
  * The risk tables of `--tables` are your risk policy, so the record carries each table as
  * a name and a sha256 only (see `sealTables`): a changed table shows, no weight and no
- * country code leaves.
+ * country code leaves. And the grid of thresholds (`SEUILS_CLIENT`, PAS_CLIENT apart) does not
+ * leave either: it is a histogram of each factor's scores, so the record keeps, per factor, only
+ * the cell the rule of `optimise` picks under ONE recall floor (`--recall`) and the next threshold
+ * (`reduire`). Another floor means running this command again, here. What that still lets an
+ * observer read of a weight is measured with the writer as the oracle (record-croise.test.ts)
+ * and said by DIT_LES_CAS (facteur.ts).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -28,12 +33,13 @@ import { execFileSync } from "node:child_process";
 import { isMain, refuserDrapeauxInconnus } from "./cli.ts";
 import { lireTable, apercu, MONTRES } from "./csv.ts";
 import { rate, type Rate } from "./interval.ts";
-import { SEUILS, PALIERS, type PalierId, type Registre, type Tables } from "./facteur.ts";
+import { SEUILS_CLIENT, PAS_CLIENT, DIT_LES_CAS, DIT_UN_AUTRE_PLANCHER, PALIERS, type PalierId, type Registre, type Tables } from "./facteur.ts";
 import { KINDS, PEPS, PRODUITS, CANAUX, exigerDossier,
          type Dossier, type Kind, type Pep, type Produit, type Canal } from "./dossier.ts";
-import { TABLES, tablesAvec } from "./assumptions.ts";
+import { TABLES, ASSUMPTIONS, tablesAvec } from "./assumptions.ts";
 import { empreinteDuReleve } from "./empreinte.ts";
 import { rendreRapport } from "./rapport.ts";
+import { meilleureSousRappel, lireRappelMin, type CellulePlacee } from "./optimise.ts";
 import { lignesEvaluationDe } from "./evaluation.ts";
 
 export const COLONNES_REVUES = ["review_id", "customer_id", "reviewed_at", "outcome"] as const;
@@ -302,11 +308,18 @@ export type Cellule = {
   pourMille?: number;
 };
 
-export type MesurePalier = { description: string; rang: number; cellules: Cellule[] };
+/** What the record keeps of a factor: the full grid of cells (one per threshold) stays on the client's machine, and the record
+ *  carries only the cell the rule of `optimise` picks under the record's recall floor, and the next threshold of the grid. */
+export type MesurePalier = { description: string; rang: number; plancher: Cellule | null; suivant: Cellule | null };
+
+/** A factor's full grid: every threshold of `SEUILS_CLIENT`. It is what `mesurer` computes and `reduire` cuts down; it is never written. */
+export type GrilleComplete = Partial<Record<PalierId, { description: string; rang: number; cellules: Cellule[] }>>;
 
 export type MesureRevues = {
   kind: "scoring-client-record";
-  version: 1;
+  /** 2: the record keeps only the cells the report cites (see `MesurePalier`); version 1 held every threshold of the grid, which
+   *  is a histogram of each factor's scores and gave a table weight back to the step of the grid. */
+  version: 2;
   measuredAt: string;
   source: {
     file: string; sha256: string;
@@ -321,7 +334,12 @@ export type MesureRevues = {
   /** The tables UNDER WHICH this record was measured, by name and sha256 and never by
    *  value: changing a table changes the scores, and the sha256 shows it. */
   tables: TableSeal[];
+  /** The recall floor this record was measured under (`--recall`, the tool's default when absent): the cells below are the ones
+   *  for it, and only those. Another floor means running measure:yours again, locally. */
+  rappelMin: number;
   paliers: Partial<Record<PalierId, MesurePalier>>;
+  /** The factor whose floor cell the rule of `optimise` picks over all factors, or null: no cell holds the floor, or too few escalations. */
+  recommande: PalierId | null;
   absents: PalierId[];
   /** By review_id: the committee's outcome and whether the nationality was unknown, never
    *  a score (a score can equal a weight of the client's risk tables). */
@@ -365,15 +383,14 @@ export function periodeDe(revues: readonly Revue[]): MesureRevues["source"]["per
   return { from, to, jours };
 }
 
-export function mesurer(
+/** Everything `mesurer` measures before it cuts the grid down: the full grid of every factor, the verdicts and the counts. */
+export function mesurerGrille(
   revues: readonly Revue[],
   parClient: ReadonlyMap<string, ClientRevu>,
   registre: Registre,
-  fichiers: { reviews: string; reviewsSha: string; customers: string; customersSha: string; customersRows: number },
   volume: MesureRevues["volume"],
   tables: Tables = TABLES,
-  measuredAt = new Date().toISOString(),
-): MesureRevues {
+): { grille: GrilleComplete; verdicts: MesureRevues["verdicts"]; escalades: number; maintenues: number; sansNationalite: number } {
   /* Une revue dont le client n'est pas dans le fichier des clients est un refus du
      contrat : un dossier ne se reconstruit pas sur du vide, et un score inventé
      déplacerait les deux taux. Nommé, avec le geste qui corrige. */
@@ -392,7 +409,7 @@ export function mesurer(
   const maintenues = revues.filter((r) => r.outcome === "maintained");
   const sansNationalite = [...dossiers.values()].filter((d) => d.nationality === undefined).length;
 
-  const paliers: Partial<Record<PalierId, MesurePalier>> = {};
+  const grille: GrilleComplete = {};
   const verdicts: MesureRevues["verdicts"] = Object.fromEntries(revues.map((r) => [r.id, {
     outcome: r.outcome,
     sansNationalite: dossiers.get(r.id)!.nationality === undefined,
@@ -406,7 +423,7 @@ export function mesurer(
        none is written per review in the record. */
     const scores = new Map<string, number>(
       revues.map((r) => [r.id, f.score(dossiers.get(r.id)!, tables)]));
-    const cellules: Cellule[] = SEUILS.map((seuil) => {
+    const cellules: Cellule[] = SEUILS_CLIENT.map((seuil) => {
       const tire = (r: Revue) => scores.get(r.id)! >= seuil;
       const tirees = revues.filter(tire).length;
       return {
@@ -416,21 +433,54 @@ export function mesurer(
         ...(volume ? { pourMille: Math.round((tirees / volume.n) * 1000 * 100) / 100 } : {}),
       };
     });
-    paliers[f.id] = { description: f.description, rang: f.rang, cellules };
+    grille[f.id] = { description: f.description, rang: f.rang, cellules };
   }
+  return { grille, verdicts, escalades: escalades.length, maintenues: maintenues.length, sansNationalite };
+}
 
+/** Cut a full grid down to what the record keeps: per factor, the cell the rule of `optimise` picks under the recall floor (the
+ *  strictest threshold that holds it, with the fewest false alerts) and the next threshold of the grid, and the factor whose cell the
+ *  rule picks over all of them. A factor that holds the floor nowhere keeps nothing. The cut IS the privacy mechanism: a grid of
+ *  cells is a histogram of the scores, and a few cells at one position per factor leave no second bracket to cross with the first. */
+export function reduire(grille: GrilleComplete, rappelMin: number): { paliers: MesureRevues["paliers"]; recommande: PalierId | null } {
+  const paliers: MesureRevues["paliers"] = {};
+  const retenues: CellulePlacee[] = [];
+  for (const [id, p] of Object.entries(grille) as [PalierId, NonNullable<GrilleComplete[PalierId]>][]) {
+    const c = meilleureSousRappel(p.cellules.map((x) => ({ ...x, palier: id, rang: p.rang })), rappelMin);
+    const nue = (x: Cellule): Cellule => ({ seuil: x.seuil, tirees: x.tirees, rappel: x.rappel, faussesAlertes: x.faussesAlertes,
+      ...(x.pourMille !== undefined ? { pourMille: x.pourMille } : {}) });
+    paliers[id] = { description: p.description, rang: p.rang, plancher: c ? nue(c) : null,
+      suivant: c ? (p.cellules.filter((x) => x.seuil > c.seuil).sort((a, b) => a.seuil - b.seuil)[0] ?? null) : null };
+    if (c) retenues.push(c);
+  }
+  const meilleure = meilleureSousRappel(retenues, rappelMin);
+  return { paliers, recommande: meilleure ? meilleure.palier : null };
+}
+
+export function mesurer(
+  revues: readonly Revue[],
+  parClient: ReadonlyMap<string, ClientRevu>,
+  registre: Registre,
+  fichiers: { reviews: string; reviewsSha: string; customers: string; customersSha: string; customersRows: number },
+  volume: MesureRevues["volume"],
+  tables: Tables = TABLES,
+  measuredAt = new Date().toISOString(),
+  rappelMin: number = ASSUMPTIONS.recallFloor,
+): MesureRevues {
+  const m = mesurerGrille(revues, parClient, registre, volume, tables);
+  const { paliers, recommande } = reduire(m.grille, rappelMin);
   return {
-    kind: "scoring-client-record", version: 1, measuredAt,
+    kind: "scoring-client-record", version: 2, measuredAt,
     source: {
       file: basename(fichiers.reviews), sha256: fichiers.reviewsSha,
-      reviews: revues.length, escalated: escalades.length, maintained: maintenues.length,
-      sansNationalite, periode: periodeDe(revues),
+      reviews: revues.length, escalated: m.escalades, maintained: m.maintenues,
+      sansNationalite: m.sansNationalite, periode: periodeDe(revues),
     },
     customers: { file: basename(fichiers.customers), sha256: fichiers.customersSha,
       rows: fichiers.customersRows },
-    volume, tables: sealTables(tables), paliers,
+    volume, tables: sealTables(tables), rappelMin, paliers, recommande,
     absents: PALIERS.filter((p) => !registre.has(p)),
-    verdicts,
+    verdicts: m.verdicts,
     code: commitCourant(),
   };
 }
@@ -460,6 +510,7 @@ export function executer(
   registre: Registre,
   volume: MesureRevues["volume"],
   tables: Tables = TABLES,
+  rappelMin: number = ASSUMPTIONS.recallFloor,
 ): { mesure: MesureRevues; cheminMd: string; cheminJson: string; avertissements: string[] } {
   const texteRevues = readFileSync(cheminRevues, "utf8");
   const texteClients = readFileSync(cheminClients, "utf8");
@@ -476,7 +527,7 @@ export function executer(
     reviews: cheminRevues, reviewsSha: createHash("sha256").update(texteRevues).digest("hex"),
     customers: cheminClients, customersSha: createHash("sha256").update(texteClients).digest("hex"),
     customersRows: parClient.size,
-  }, volume, tables);
+  }, volume, tables, undefined, rappelMin);
   m.empreinte = empreinteDuReleve(m);
 
   const base = cheminRevues.replace(/\.csv$/i, "");
@@ -489,7 +540,7 @@ export function executer(
 
 async function principal(): Promise<void> {
   for (const l of lignesEvaluationDe("scoring")) console.log(l);
-  refuserDrapeauxInconnus(["--customers", "--reviews", "--volume", "--tables"]);
+  refuserDrapeauxInconnus(["--customers", "--reviews", "--volume", "--tables", "--recall"]);
   const arg = (nom: string) => process.argv.find((a) => a.startsWith(`--${nom}=`))?.split("=").slice(1).join("=");
   const cheminRevues = arg("reviews");
   const cheminClients = arg("customers");
@@ -497,7 +548,7 @@ async function principal(): Promise<void> {
     console.log(`
 Which risk factor suffices, at which threshold, on your own periodic-review outcomes.
 
-  npm run measure:yours -- --customers=your-customers.csv --reviews=your-reviews.csv [--volume=N] [--tables=t.json]
+  npm run measure:yours -- --customers=your-customers.csv --reviews=your-reviews.csv [--volume=N] [--tables=t.json] [--recall=0.90]
 
 The REVIEWS file wants: review_id,customer_id,reviewed_at,outcome[,rating_before]
   outcome is the committee's decision: escalated or maintained.
@@ -507,6 +558,12 @@ contract table (kind, residence_country, activity_code, products, pep,
 onboarding_channel, relationship_start, turnovers, ratios, and the entity fields).
 
 --volume=N     customers in the portfolio: buys reviews-per-thousand, never estimated.
+--recall=min   the recall floor your committee holds the reviews to, between 0 and 1 (default
+               ${ASSUMPTIONS.recallFloor.toFixed(2)}). The record keeps ONLY the cells for that floor: per factor, its cell at
+               the floor (the strictest threshold that holds it, with the fewest false alerts)
+               and the next threshold of a grid ${PAS_CLIENT.toFixed(2)} apart. The full grid stays on your machine and
+               is not written. ${DIT_UN_AUTRE_PLANCHER} optimise refuses it.
+               ${DIT_LES_CAS}
 --tables=f     your own risk tables (JSON, whole tables only): replaces the declared
                demonstration tables, which are short, assumed, and never an official list.
                The record seals each table's name and sha256, never a weight or a code.
@@ -515,8 +572,8 @@ onboarding_channel, relationship_start, turnovers, ratios, and the entity fields
 
 It writes, next to your reviews file and nowhere else:
   <file>-measured.md     the report (no customer, no country, no amount of yours)
-  <file>-measured.json   the sealed record: counts, rates, verdicts by review_id,
-                         the sha256 of each risk table
+  <file>-measured.json   the sealed record: the cells kept for your recall floor, verdicts by
+                         review_id, the sha256 of each risk table
 
 Then: npm run optimise -- --from=<file>-measured.json --recall=0.90
 Nothing about your files leaves this machine.
@@ -526,6 +583,8 @@ Nothing about your files leaves this machine.
   const brutVolume = arg("volume");
   const volume: MesureRevues["volume"] =
     brutVolume !== undefined ? { origine: "volume", n: lireVolume(brutVolume) } : null;
+  const brutRappel = arg("recall");
+  const rappelMin = brutRappel !== undefined ? lireRappelMin(brutRappel) : ASSUMPTIONS.recallFloor;
   const brutTables = arg("tables");
   const tables = brutTables !== undefined ? tablesAvec(readFileSync(brutTables, "utf8")) : TABLES;
 
@@ -535,19 +594,20 @@ Nothing about your files leaves this machine.
     registre = charger();
   }
 
-  const { mesure, cheminMd, cheminJson, avertissements } = executer(cheminRevues, cheminClients, registre, volume, tables);
+  const { mesure, cheminMd, cheminJson, avertissements } = executer(cheminRevues, cheminClients, registre, volume, tables, rappelMin);
   for (const a of avertissements) console.warn(`⚠ ${a}`);
 
   console.log(`\n${mesure.source.reviews} review(s): ${mesure.source.escalated} escalated, `
     + `${mesure.source.maintained} maintained, ${mesure.source.sansNationalite} without nationality; `
-    + `${Object.keys(mesure.paliers).length} factor(s), ${SEUILS.length} thresholds each.`);
+    + `${Object.keys(mesure.paliers).length} factor(s); the record keeps, for recall floor ${rappelMin}, each factor's cell and the next threshold of a grid of `
+    + `${SEUILS_CLIENT.length} thresholds, ${mesure.recommande ? `and recommends ${mesure.recommande}` : "and no cell holds the floor"}.`);
   if (mesure.absents.length) {
     console.log(`  ${mesure.absents.length} contract factor(s) not in the registry: `
       + `${mesure.absents.join(", ")}; said in the report, not guessed.`);
   }
   console.log(`  ${cheminMd}`);
   console.log(`  ${cheminJson}`);
-  console.log(`\nNext: npm run optimise -- --from=${basename(cheminJson)} --recall=0.90\n`);
+  console.log(`\nNext: npm run optimise -- --from=${basename(cheminJson)} --recall=${rappelMin}\n`);
 }
 
 /* Un refus destiné au client ne sort pas en trace de pile. */
