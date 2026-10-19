@@ -62,6 +62,14 @@ with `npm run verify`.
 **131 tests** across 20 files, counted by running the suite rather than typed here.
 <!-- /figures:tests -->
 
+## What is public, what is private
+
+The figures stay public: `releve-public.json`, its signature and `RELEVE-PUBLIC.md`. The only labelled dossiers left public are in `src/echantillons/dossiers-20.json`: 20 dossiers, every family at least once, drawn by a fixed rule written at the top of the file (rank by the SHA-256 of a seed and the dossier id), never hand-picked.
+
+The full labelled dossier set (`src/dossiers-etiquetes.json`) is private since this change. Its recorded SHA-256 is `fb3762798a757e020570a2680179c9054d53abec17aafeec0a43d4af38d9f63f`, from the private folder's `MANIFEST.txt`. Earlier versions remain in the git history of this repository.
+
+A holder of the private folder runs the full tests with `CRUSETRA_JEUX=/path/to/crusetra-jeux/crusetra-scoring npm test` (default: `../crusetra-jeux/crusetra-scoring`); the seal then recomputes. Without it the tests that read the set are skipped with a named reason.
+
 ## Licence
 
 The same public licence as Crusetra Routing: non-commercial use without limit of time, a
