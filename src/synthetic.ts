@@ -23,7 +23,7 @@
  * qui porte la nature (cash, private, crypto) ne permute pas.
  */
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { cheminPrive, jeuPresent, JeuPriveAbsent } from "./jeux.ts";
 import { exigerDossier, type Dossier, type Produit } from "./dossier.ts";
 
 export const NATURES_ESCALATED = [
@@ -57,9 +57,13 @@ const PERMUTABLES: Partial<Record<Produit, Produit[]>> = {
   correspondent: ["correspondent", "trade"], trade: ["trade", "correspondent"],
 };
 
+/** The full authored set is private: see jeux.ts. Its public sample is echantillons/dossiers-20.json. */
+export const DOSSIERS_PRIVES = "src/dossiers-etiquetes.json";
+
 /** Les dossiers écrits, relus et revalidés un par un : la couture de L4. */
 export function chargerDossiersEtiquetes(): DossierEtiquete[] {
-  const chemin = fileURLToPath(new URL("./dossiers-etiquetes.json", import.meta.url));
+  if (!jeuPresent(DOSSIERS_PRIVES)) throw new JeuPriveAbsent(DOSSIERS_PRIVES);
+  const chemin = cheminPrive(DOSSIERS_PRIVES);
   const brut = JSON.parse(readFileSync(chemin, "utf8")) as { dossiers: DossierEtiquete[] };
   const toutes = new Set<string>([...NATURES_ESCALATED, ...NATURES_MAINTAINED]);
   for (const d of brut.dossiers) {
