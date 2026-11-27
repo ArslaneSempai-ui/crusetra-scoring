@@ -12,7 +12,8 @@ import { join } from "node:path";
 import { PALIERS, type Registre, type Facteur } from "./facteur.ts";
 import { exigerDossier } from "./dossier.ts";
 import { registre } from "./facteurs/index.ts";
-import { chargerDossiersEtiquetes, jeuSynthetique, type DossierEtiquete } from "./synthetic.ts";
+import { chargerDossiersEtiquetes, jeuSynthetique, DOSSIERS_PRIVES, type DossierEtiquete } from "./synthetic.ts";
+import { jeuPresent, raisonAbsent } from "./jeux.ts";
 import { empreinteDuReleve, scelleIntact } from "./empreinte.ts";
 import { TABLES } from "./assumptions.ts";
 import {
@@ -89,7 +90,7 @@ test("les deux moitiés ne se fusionnent JAMAIS, et le mélange est un refus nom
     new RegExp(`at least ${ASSEZ_PAR_ISSUE} of EACH`));
 });
 
-test("le scellé refuse la retouche d'un seul succès ; la moitié synthétique est déterministe à graine fixe", () => {
+test("le scellé refuse la retouche d'un seul succès", () => {
   const r: Registre = new Map([["geography", scripte("geography", 1, {})]]);
   const m = construireReleve(jeuTemoin(), enVariantes(jeuTemoin()), r, TABLES, "2026-09-08", "temoin");
   m.empreinte = empreinteDuReleve(m);
@@ -97,6 +98,10 @@ test("le scellé refuse la retouche d'un seul succès ; la moitié synthétique 
   const retouche = JSON.parse(JSON.stringify(m)) as typeof m;
   retouche.authored.tables["geography"]!["0.50"]!.rappel.succes += 1;
   assert.equal(scelleIntact(retouche as unknown as Record<string, unknown>), false);
+});
+
+test("la moitié synthétique est déterministe à graine fixe, sur le jeu écrit",
+  { skip: jeuPresent(DOSSIERS_PRIVES) ? false : raisonAbsent(DOSSIERS_PRIVES) }, () => {
   const ecrits = chargerDossiersEtiquetes();
   const a = jeuSynthetique(ecrits, GRAINE_PUBLIQUE, VARIANTES_PAR_DOSSIER);
   const b = jeuSynthetique(ecrits, GRAINE_PUBLIQUE, VARIANTES_PAR_DOSSIER);

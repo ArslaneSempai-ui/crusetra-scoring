@@ -2,14 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   chargerDossiersEtiquetes, variantes, jeuSynthetique, tirage,
-  NATURES_ESCALATED, NATURES_MAINTAINED, type DossierEtiquete,
+  NATURES_ESCALATED, NATURES_MAINTAINED, DOSSIERS_PRIVES, type DossierEtiquete,
 } from "./synthetic.ts";
+import { jeuPresent, raisonAbsent } from "./jeux.ts";
 import { exigerDossier } from "./dossier.ts";
 
-const dossiers = chargerDossiersEtiquetes();
+/** The full set is private: without it these cases skip with a named reason. */
+const SKIP = jeuPresent(DOSSIERS_PRIVES) ? false : raisonAbsent(DOSSIERS_PRIVES);
+const dossiers = SKIP ? [] : chargerDossiersEtiquetes();
 const parNature = (n: string) => dossiers.filter((d) => d.nature === n);
 
-test("au moins 40 escalated et 40 maintained, chaque nature du contrat présente, identifiants uniques", () => {
+test("au moins 40 escalated et 40 maintained, chaque nature du contrat présente, identifiants uniques", { skip: SKIP }, () => {
   const escalated = dossiers.filter((d) => (NATURES_ESCALATED as readonly string[]).includes(d.nature));
   const maintained = dossiers.filter((d) => (NATURES_MAINTAINED as readonly string[]).includes(d.nature));
   assert.ok(escalated.length >= 40, `${escalated.length} escalated : le contrat en demande 40`);
@@ -20,7 +23,7 @@ test("au moins 40 escalated et 40 maintained, chaque nature du contrat présente
   assert.equal(new Set(dossiers.map((d) => d.id)).size, dossiers.length, "identifiants en double");
 });
 
-test("chaque dossier écrit passe exigerDossier et porte une raison d'une phrase, sans cadratin", () => {
+test("chaque dossier écrit passe exigerDossier et porte une raison d'une phrase, sans cadratin", { skip: SKIP }, () => {
   for (const d of dossiers) {
     exigerDossier(d);
     assert.ok(d.raison.trim().length > 20, `raison trop courte pour ${d.id}`);
@@ -28,7 +31,7 @@ test("chaque dossier écrit passe exigerDossier et porte une raison d'une phrase
   }
 });
 
-test("les sosies sont structurellement des sosies : les champs portent la différence, pas l'étiquette", () => {
+test("les sosies sont structurellement des sosies : les champs portent la différence, pas l'étiquette", { skip: SKIP }, () => {
   /* Chaque jumeau bénin se distingue de son suspect PAR LES DONNÉES ; six paires épinglées. */
   for (const d of parNature("shell-layers")) assert.ok(d.ownershipLayers >= 3 && d.opaqueJurisdiction, d.id);
   for (const d of parNature("domestic-sme")) {
@@ -62,7 +65,7 @@ test("les sosies sont structurellement des sosies : les champs portent la diffé
   for (const d of parNature("retiree")) assert.equal(d.pep, "none", d.id);
 });
 
-test("aucune liste officielle recopiée : les faits de risque vivent dans les champs, pas dans les pays", () => {
+test("aucune liste officielle recopiée : les faits de risque vivent dans les champs, pas dans les pays", { skip: SKIP }, () => {
   /* Le contrat refuse une liste officielle recopiée. Structurellement : l'opacité est un
      BOOLÉEN déclaré, et les pays des dossiers restent dans les deux classes ordinaires du
      générateur — aucun code n'est réservé aux suspects. */
@@ -73,7 +76,7 @@ test("aucune liste officielle recopiée : les faits de risque vivent dans les ch
     `${communs.length} pays partagés entre suspects et bénins : un pays qui n'apparaît que chez les suspects redevient une liste`);
 });
 
-test("le générateur et les variantes sont déterministes", () => {
+test("le générateur et les variantes sont déterministes", { skip: SKIP }, () => {
   const a = tirage(4), b = tirage(4);
   assert.deepEqual([a(), a()], [b(), b()]);
   const ecrit = dossiers.find((d) => d.nature === "shell-layers")!;
@@ -81,7 +84,7 @@ test("le générateur et les variantes sont déterministes", () => {
   assert.notDeepEqual(variantes(ecrit, 20260906, 3), variantes(ecrit, 20260907, 3));
 });
 
-test("chaque variante passe exigerDossier, garde sa nature, rend exactement n, se déclare synthétique", () => {
+test("chaque variante passe exigerDossier, garde sa nature, rend exactement n, se déclare synthétique", { skip: SKIP }, () => {
   for (const nature of [...NATURES_ESCALATED, ...NATURES_MAINTAINED]) {
     const ecrit = dossiers.find((d) => d.nature === nature)!;
     const vs = variantes(ecrit, 11, 4);
@@ -95,7 +98,7 @@ test("chaque variante passe exigerDossier, garde sa nature, rend exactement n, s
   }
 });
 
-test("le gigage préserve la nature : rapports liés, seuils tenus, classes de pays et de produits", () => {
+test("le gigage préserve la nature : rapports liés, seuils tenus, classes de pays et de produits", { skip: SKIP }, () => {
   const cas: [string, (v: DossierEtiquete) => boolean, string][] = [
     ["undeclared-turnover", (v) => v.observedTurnover / v.declaredTurnover >= 3.5, "le rapport observé/déclaré s'effondre en gigant"],
     ["salaried", (v) => v.observedTurnover / v.declaredTurnover < 1.8, "le salarié gigué se met à cacher du chiffre"],
@@ -126,7 +129,7 @@ test("le gigage préserve la nature : rapports liés, seuils tenus, classes de p
   }
 });
 
-test("le jeu synthétique couvre toutes les natures et reste stable sous retrait d'un dossier", () => {
+test("le jeu synthétique couvre toutes les natures et reste stable sous retrait d'un dossier", { skip: SKIP }, () => {
   const jeu = jeuSynthetique(dossiers, 20260906, 2);
   assert.equal(jeu.length, dossiers.length * 2);
   const natures = new Set(jeu.map((d) => d.nature));
